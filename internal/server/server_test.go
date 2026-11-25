@@ -169,7 +169,7 @@ func TestDownloadSetsFilename(t *testing.T) {
 func TestIndex(t *testing.T) {
 	h := testServer(t)
 	today := get(t, h, "/").Body.String()
-	for _, want := range []string{"not yet run", `<a href="/charts">Charts</a>`, `class="on" aria-current="page">Today`,
+	for _, want := range []string{"not yet run", `<a href="/charts" title="Charts (⌘2)"><svg`, `Charts</a>`, `class="on" aria-current="page"><svg`,
 		`src="/daily.png"`, `src="/early-warning.png"`, "Running "} {
 		if !strings.Contains(today, want) {
 			t.Errorf("today missing %q", want)
@@ -177,7 +177,10 @@ func TestIndex(t *testing.T) {
 	}
 	for _, p := range pages {
 		rec := get(t, h, p.Path)
-		if rec.Code != 200 || !strings.Contains(rec.Body.String(), `aria-current="page">`+p.Label+`</a>`) {
+		body := rec.Body.String()
+		on := strings.Index(body, `aria-current="page">`) // the marked tab: its icon, then its label
+		if rec.Code != 200 || on < 0 || !strings.HasPrefix(body[on+len(`aria-current="page">`):], "<svg") ||
+			!strings.Contains(body[on:on+strings.Index(body[on:], "</a>")], "</svg>"+p.Label) {
 			t.Errorf("%s: %d, or its tab isn't marked", p.Path, rec.Code)
 		}
 	}
@@ -400,6 +403,55 @@ func TestNightScreensFollowDate(t *testing.T) {
 		}
 		if rec := get(t, h, u+"?date=2026-11-18"); rec.Code != 404 {
 			t.Errorf("%s?date=2026-11-18 (no sleep that day): %d, want 404", u, rec.Code)
+		}
+	}
+}
+
+// A path the server doesn't have: a browser gets the panel's 404 page,
+// with the wolf mark and the way back; anything else, plain text.
+func TestNotFound(t *testing.T) {
+	h := testServer(t)
+	req := httptest.NewRequest("GET", "/nope", nil)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	body := rec.Body.String()
+	if rec.Code != 404 || !strings.Contains(body, `class="code">404`) || !strings.Contains(body, "<code>/nope</code>") ||
+		!strings.Contains(body, `href="/">Back to Today`) || !strings.Contains(body, "<svg") {
+		t.Errorf("browser 404: %d\n%.400s", rec.Code, body)
+	}
+	plain := get(t, h, "/nope.png")
+	if plain.Code != 404 || strings.Contains(plain.Body.String(), "<html") {
+		t.Errorf("non-browser 404: %d %q", plain.Code, plain.Body.String())
+	}
+	// the real pages still answer, and their charts sit on the placeholder
+	if page := get(t, h, "/charts"); page.Code != 200 || !strings.Contains(page.Body.String(), `class="shot"`) ||
+		!strings.Contains(page.Body.String(), "--ratio: 800 / 480") {
+		t.Errorf("charts: %d, no placeholder boxes", page.Code)
+	}
+}
+
+// The small touches: a confirmation after a form shows as a toast that
+// fades (failures stay on the page), removing a log asks first, each tab
+// names its ⌘ shortcut, and every page carries the connection watcher.
+func TestPanelTouches(t *testing.T) {
+	h := testServer(t)
+	for u, want := range map[string]string{
+		"/display?schedule=saved":  `class="toast" id="toast" role="status">Schedule saved.`,
+		"/alerts?alerts=test-sent": `class="toast" id="toast" role="status">Test sent: check the phone.`,
+		"/habits?habit=removed":    `class="toast" id="toast" role="status">Log removed.`,
+	} {
+		if body := get(t, h, u).Body.String(); !strings.Contains(body, want) {
+			t.Errorf("%s: no toast %q", u, want)
+		}
+	}
+	if body := get(t, h, "/display").Body.String(); strings.Contains(body, `id="toast"`) {
+		t.Error("a toast with nothing to say")
+	}
+	body := get(t, h, "/").Body.String()
+	for _, want := range []string{`title="Settings (⌘6)"`, `id="offline"`, "Can't reach Wolfe Health", `fetch("/status"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("today missing %q", want)
 		}
 	}
 }

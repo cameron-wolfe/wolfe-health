@@ -515,6 +515,23 @@ log; **Alerts** phone alerts; **Settings** every setting in effect (set ones
 in bold, secrets hidden). On a phone, tablet or Mac, Add to Home Screen (or
 Add to Dock) opens it like an app, with no browser bars.
 
+Small things that make it feel like one: each tab has an icon and a
+shortcut (⌘1–⌘6, Ctrl on Windows); a chart's box shows the wolf mark,
+pulsing, while the chart draws; a confirmation ("Schedule saved", "Log
+removed") shows briefly and fades, while a failure stays; removing a log or
+resetting the schedule asks first; a page the server doesn't have gets a
+404 page with the mark and the way back. And the panel watches its
+connection: when the server stops answering (restarting, down, or this
+device off the network or Tailscale), an overlay says so and retries every
+few seconds, then reloads the page when it's back. It runs on a one-second
+heartbeat rather than long timers, so it copes with a Dock or Home Screen
+app whose timers the system slows or holds in the background: a check that
+hangs is given up after 8 seconds, a page that was suspended checks as soon
+as it wakes, and coming back to the app checks at once. To see what it's
+doing on a device, **Settings → Show the watcher's status** puts its last
+check in the corner of every page (a Dock app keeps its own setting), or
+add `?watch=1` to an address for one visit.
+
 ```bash
 make daemon                                 # run it here: http://localhost:8090
 ./bin/wolfe-health daemon -listen :8090 -every 1h -days 7

@@ -3,9 +3,11 @@ package server
 import (
 	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cameron-wolfe/wolfe-health/internal/chart"
@@ -25,23 +27,26 @@ type card struct {
 func (c card) Download() string { return withParam(c.Src, "download", "1") }
 
 type indexData struct {
-	Page    string // which page: today, charts, display, habits, alerts, settings
-	Status  Status
-	Now     time.Time
-	W, H    int
-	Days    int
-	Date    string    // the date of interest, YYYY-MM-DD; "" for today
-	AsOf    time.Time // that date, for the page's wording
-	MaxDate string    // today, the latest date the picker allows
-	Today   []card
-	Key     []card // Today's page: the few charts most worth a glance
-	Trends  []card
-	More    []card
-	Nights  []card
-	Sizes   []string
-	Healthy bool
-	Mark    template.HTML // the wolf mark, inline SVG
-	Favicon template.URL  // the mark as a data: URL for the tab icon
+	Page        string // which page: today, charts, display, habits, alerts, settings
+	Status      Status
+	Now         time.Time
+	W, H        int
+	Days        int
+	Date        string    // the date of interest, YYYY-MM-DD; "" for today
+	AsOf        time.Time // that date, for the page's wording
+	MaxDate     string    // today, the latest date the picker allows
+	Today       []card
+	Key         []card // Today's page: the few charts most worth a glance
+	Trends      []card
+	More        []card
+	Nights      []card
+	Sizes       []string
+	Healthy     bool
+	Mark        template.HTML // the wolf mark, inline SVG
+	Favicon     template.URL  // the mark as a data: URL for the tab icon
+	Placeholder template.CSS  // the mark as a CSS image, behind a chart while it draws
+	BigMark     template.HTML // the mark, large, for the 404 page
+	Missing     string        // the 404 page: the path asked for
 
 	Devices   []deviceRow // paired TRMNL displays
 	DeviceLog []DeviceLog // their recent reports, newest last
@@ -58,7 +63,6 @@ type indexData struct {
 	AlertWhy string // why it's hidden, when it is
 	Showing  string // "Daily brief until 1:00 PM"
 	HeldOn   string // the displays' date of interest, YYYY-MM-DD; "" for live
-	SchedMsg string // "Schedule saved"
 	SchedErr string
 
 	HabitToken string     // the habit log's token, for the shortcut
@@ -75,6 +79,7 @@ type indexData struct {
 	AlertsMsg    string     // after Send test: "sent" or "failed"
 
 	Settings []Setting // every setting in effect, for the Settings page
+	Toast    string    // a confirmation to show briefly: "Schedule saved."
 }
 
 // Setting is one setting in effect, for the Settings page.
@@ -85,14 +90,25 @@ type Setting struct {
 	Set   bool   // set in .env or on the command line, rather than the default
 }
 
-// pages are the panel's pages, in the tab bar's order: path, tab label.
-var pages = []struct{ Name, Path, Label string }{
-	{"today", "/", "Today"},
-	{"charts", "/charts", "Charts"},
-	{"display", "/display", "Display"},
-	{"habits", "/habits", "Habits"},
-	{"alerts", "/alerts", "Alerts"},
-	{"settings", "/settings", "Settings"},
+// pages are the panel's pages, in the tab bar's order: path, tab label,
+// and the tab's icon (line drawings on a 24-unit grid, in the text color).
+var pages = []struct {
+	Name, Path, Label string
+	Icon              template.HTML
+	Key               int // ⌘ and this number switches to it
+}{
+	{"today", "/", "Today", tabIcon(`<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>`), 1},
+	{"charts", "/charts", "Charts", tabIcon(`<path d="M3 3v18h18"/><path d="M8 17v-4M13 17V8M18 17v-7"/>`), 2},
+	{"display", "/display", "Display", tabIcon(`<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>`), 3},
+	{"habits", "/habits", "Habits", tabIcon(`<path d="M9 11l3 3 9-10"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>`), 4},
+	{"alerts", "/alerts", "Alerts", tabIcon(`<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>`), 5},
+	{"settings", "/settings", "Settings", tabIcon(`<path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/>`), 6},
+}
+
+// tabIcon wraps a tab's drawing in its SVG: 16 px, stroked in the text color.
+func tabIcon(shapes string) template.HTML {
+	return template.HTML(`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" ` +
+		`stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">` + shapes + `</svg>`)
 }
 
 // schedRow is one daypart in the schedule form.
@@ -112,10 +128,14 @@ type deviceRow struct {
 }
 
 // markHTML and favicon are the Wolfe Health mark for the page: white on the
-// black masthead, and black on white for the browser tab.
+// black masthead, and black on white for the browser tab. placeholder is
+// the mark in light gray on a chart's white, shown while the chart draws;
+// bigMark the mark at 120 px for the 404 page, in the page's own colors.
 var (
-	markHTML = template.HTML(chart.WolfMarkSVG(30, "#fff", "#111"))
-	favicon  = template.URL("data:image/svg+xml," + url.PathEscape(chart.WolfMarkSVG(64, "#111", "#fff")))
+	markHTML    = template.HTML(chart.WolfMarkSVG(30, "#fff", "#111"))
+	favicon     = template.URL("data:image/svg+xml," + url.PathEscape(chart.WolfMarkSVG(64, "#111", "#fff")))
+	placeholder = template.CSS(`url("data:image/svg+xml,` + url.PathEscape(chart.WolfMarkSVG(64, "#d4d4d4", "#fff")) + `")`)
+	bigMark     = template.HTML(chart.WolfMarkSVG(120, "var(--muted)", "var(--bg)"))
 )
 
 // page serves one of the panel's pages (pages): the same data, a
@@ -178,7 +198,7 @@ func (s *server) index(w http.ResponseWriter, r *http.Request, page string) {
 		d.Date = base.Format("2006-01-02")
 	}
 	d.Healthy = d.Status.LastError == ""
-	d.Mark, d.Favicon = markHTML, favicon
+	d.Mark, d.Favicon, d.Placeholder = markHTML, favicon, placeholder
 
 	d.Today = []card{
 		{Title: "Daily brief", Note: "readiness as a gauge, last night as a moon, today's rings and yesterday's figures, as a console", Src: src("/daily.png", nil)},
@@ -291,6 +311,15 @@ func (s *server) index(w http.ResponseWriter, r *http.Request, page string) {
 		return
 	}
 	d.AlertsMsg = r.URL.Query().Get("alerts")
+	// a confirmation after a form, shown briefly then faded out (failures
+	// stay on the page instead)
+	q := r.URL.Query()
+	d.Toast = map[string]string{
+		"test-sent": "Test sent: check the phone.", "summary-sent": "Morning summary sent: check the phone.",
+	}[q.Get("alerts")]
+	if t := map[string]string{"saved": "Log saved.", "removed": "Log removed."}[q.Get("habit")]; t != "" {
+		d.Toast = t
+	}
 	d.Version = version.Get().String(s.now().Location())
 	d.Showing = screenTitle(sl.Screen) + " until " + sl.Until.Format("3:04 PM")
 	d.HeldOn = sc.AsOf
@@ -308,9 +337,9 @@ func (s *server) index(w http.ResponseWriter, r *http.Request, page string) {
 	}
 	switch r.URL.Query().Get("schedule") {
 	case "saved":
-		d.SchedMsg = "Schedule saved."
+		d.Toast = "Schedule saved."
 	case "reset":
-		d.SchedMsg = "Schedule reset to the default."
+		d.Toast = "Schedule reset to the default."
 	}
 	d.SchedErr = r.URL.Query().Get("schedule_error")
 
@@ -347,6 +376,24 @@ func (s *server) index(w http.ResponseWriter, r *http.Request, page string) {
 	w.Header().Set("Cache-Control", "no-store")
 	if err := indexTmpl.Execute(w, d); err != nil {
 		serverError(w, err)
+	}
+}
+
+// notFound answers a path the server doesn't have: for a browser, the
+// panel's own page (the wolf mark, 404, the way back); for anything else
+// (a display, a script), plain text, as before.
+func (s *server) notFound(w http.ResponseWriter, r *http.Request) {
+	if !strings.Contains(r.Header.Get("Accept"), "text/html") {
+		http.NotFound(w, r)
+		return
+	}
+	d := indexData{Page: "notfound", Now: s.now(), Mark: markHTML, Favicon: favicon, Placeholder: placeholder,
+		BigMark: bigMark, Missing: r.URL.Path}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNotFound)
+	if err := indexTmpl.Execute(w, d); err != nil {
+		log.Printf("404 page: %v", err)
 	}
 }
 
@@ -394,7 +441,7 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
 <meta name="theme-color" content="#111111">
 <link rel="manifest" href="/app/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/emulator/icon.png">
-<title>Wolfe Health{{range pages}}{{if and (eq .Name $.Page) (ne .Name "today")}} · {{.Label}}{{end}}{{end}}</title>
+<title>Wolfe Health{{if eq .Page "notfound"}} · Not found{{end}}{{range pages}}{{if and (eq .Name $.Page) (ne .Name "today")}} · {{.Label}}{{end}}{{end}}</title>
 <link rel="icon" href="{{.Favicon}}">
 <style>
   :root { --ink:#111; --muted:#666; --line:#ddd; --bg:#fafafa; --card:#fff; --bad:#a00; --tab:#2a2a2a; }
@@ -417,8 +464,10 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
   nav.tabs { display:flex; gap:4px; overflow-x:auto; padding:0 max(12px, env(safe-area-inset-left)) 8px;
              scrollbar-width:none; -webkit-overflow-scrolling:touch; }
   nav.tabs::-webkit-scrollbar { display:none; }
-  nav.tabs a { color:#cfcfcf; text-decoration:none; padding:6px 14px; border-radius:999px;
-               white-space:nowrap; font-size:14px; }
+  nav.tabs a { color:#cfcfcf; text-decoration:none; padding:6px 14px 6px 11px; border-radius:999px;
+               white-space:nowrap; font-size:14px; display:inline-flex; align-items:center; gap:7px; }
+  nav.tabs a svg { flex:none; opacity:.85; }
+  nav.tabs a.on svg { opacity:1; }
   nav.tabs a:hover { background:var(--tab); color:#fff; }
   nav.tabs a.on { background:#fff; color:#111; font-weight:600; }
   h1 { font-size:20px; margin:4px 0 12px; }
@@ -447,8 +496,42 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
   .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
   .card h3 { font-size:15px; margin:0; }
   .card .note { margin:0 0 8px; font-size:13px; }
-  /* charts are drawn white for e-ink; keep them white in dark mode too */
-  .card img { display:block; width:100%; height:auto; background:#fff; border:1px solid var(--line); }
+  /* charts are drawn white for e-ink; keep them white in dark mode too.
+     Until one has drawn, its box (the chart's shape) shows the wolf mark,
+     pulsing; it fades out as the chart fades in, or stays, with a note,
+     if the chart can't be drawn */
+  .shot { display:block; position:relative; aspect-ratio:var(--ratio, 5 / 3); background:#fff;
+          border:1px solid var(--line); overflow:hidden; }
+  .shot::before { content:""; position:absolute; inset:0; background:{{.Placeholder}} center / min(28%, 96px) no-repeat;
+                  animation:breathe 1.6s ease-in-out infinite; transition:opacity .3s; }
+  .shot img { display:block; width:100%; height:100%; object-fit:contain; opacity:0; transition:opacity .35s; }
+  .shot.loaded::before { opacity:0; animation:none; }
+  .shot.loaded img { opacity:1; }
+  .shot.failed::before { animation:none; opacity:.6; }
+  .shot.failed::after { content:"Couldn't draw this chart"; position:absolute; left:0; right:0; bottom:12%;
+                        text-align:center; font-size:13px; color:#888; }
+  @keyframes breathe { 0%, 100% { opacity:.35; } 50% { opacity:1; } }
+  @media (prefers-reduced-motion: reduce) { .shot::before { animation:none; opacity:.7; } }
+  /* a confirmation, briefly, at the bottom; it fades out by itself */
+  .toast { position:fixed; left:50%; bottom:max(20px, env(safe-area-inset-bottom)); transform:translate(-50%, 0);
+           background:var(--ink); color:var(--bg); padding:10px 18px; border-radius:999px; font-size:14px; z-index:20;
+           box-shadow:0 6px 24px rgba(0,0,0,.3); transition:opacity .5s, transform .5s; }
+  .toast.gone { opacity:0; transform:translate(-50%, 12px); pointer-events:none; }
+  /* the connection watcher's overlay: the server stopped answering */
+  .offline { position:fixed; inset:0; z-index:30; display:none; align-items:center; justify-content:center;
+             background:rgba(17,17,17,.88); color:#eee; text-align:center; padding:24px; }
+  .offline.on { display:flex; }
+  .offline svg { display:block; width:72px; height:72px; margin:0 auto 14px; animation:breathe 3.2s ease-in-out infinite; }
+  .offline h2 { margin:0 0 6px; font-size:20px; }
+  .offline p { margin:4px 0; color:#bbb; max-width:30em; }
+  /* the watcher's status, when turned on from Settings: what it last did */
+  .watch-status { position:fixed; left:8px; bottom:8px; z-index:31; font:12px/1.3 ui-monospace, Menlo, monospace;
+                  background:rgba(0,0,0,.75); color:#ddd; padding:4px 8px; border-radius:6px; max-width:calc(100% - 16px); }
+  .notfound { text-align:center; padding:12vh 16px 8vh; }
+  .notfound svg { display:block; margin:0 auto 12px; }
+  .notfound .code { font-size:56px; font-weight:800; letter-spacing:.06em; margin:0; }
+  .notfound p { margin:6px 0; }
+  .notfound .actions { justify-content:center; margin-top:20px; }
   .links { margin-top:8px; font-size:13px; display:flex; gap:16px; }
   a { color:inherit; }
   ul.nights { list-style:none; padding:0; margin:0; display:grid;
@@ -476,7 +559,7 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
     <span class="wordmark">WOLFE HEALTH</span>
     <span class="when">{{clock .Now}}</span>
   </div>
-  <nav class="tabs">{{range pages}}<a href="{{.Path}}"{{if eq .Name $.Page}} class="on" aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
+  <nav class="tabs">{{range pages}}<a href="{{.Path}}" title="{{.Label}} (⌘{{.Key}})"{{if eq .Name $.Page}} class="on" aria-current="page"{{end}}>{{.Icon}}{{.Label}}</a>{{end}}</nav>
 </header>
 <main>
 {{if .Alert}}<p class="alert"><b>Body signals:</b> {{.Alert}} · <a href="/body-signals.png">see the chart</a></p>{{end}}
@@ -490,7 +573,7 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
   {{if .AlertsTo}}<form method="post" action="/alerts/summary" style="margin:0"><button type="submit">Send morning summary</button></form>{{end}}
 </div>
 </div>
-<div class="grid">
+<div class="grid" style="--ratio: {{.W}} / {{.H}}">
 {{range .Key}}{{template "card" .}}{{end}}
 </div>
 {{end}}
@@ -514,17 +597,17 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
 each screen as it would have looked that day. <a href="?w={{.W}}&amp;h={{.H}}&amp;days={{.Days}}">Back to today</a></p>{{end}}
 
 <h2>Today</h2>
-<div class="grid">
+<div class="grid" style="--ratio: {{.W}} / {{.H}}">
 {{range .Today}}{{template "card" .}}{{end}}
 </div>
 
 <h2>Stress and sleep detail</h2>
-<div class="grid">
+<div class="grid" style="--ratio: {{.W}} / {{.H}}">
 {{range .More}}{{template "card" .}}{{end}}
 </div>
 
 <h2>Trends</h2>
-<div class="grid">
+<div class="grid" style="--ratio: {{.W}} / {{.H}}">
 {{range .Trends}}{{template "card" .}}{{end}}
 </div>
 
@@ -544,7 +627,6 @@ each screen as it would have looked that day. <a href="?w={{.W}}&amp;h={{.H}}&am
 </div>
 
 <h2 id="schedule">Schedule</h2>
-{{if .SchedMsg}}<p class="ok">{{.SchedMsg}}</p>{{end}}
 {{if .SchedErr}}<p class="bad">Not saved: {{.SchedErr}}</p>{{end}}
 <form method="post" action="/schedule" class="sched">
 <div class="scroll"><table class="devices">
@@ -568,7 +650,7 @@ On Sundays, show last week's review first in each daypart that rotates</label></
 <p><label>Show the displays as of <input type="date" name="as_of" value="{{.HeldOn}}" max="{{.MaxDate}}"></label>
 <span class="muted">— every screen drawn as it looked that day; leave blank (or clear it) for today, live</span></p>
 <p><button type="submit">Save schedule</button>
-<button type="submit" name="reset" value="1" formnovalidate>Reset to default</button>
+<button type="submit" name="reset" value="1" formnovalidate onclick="return confirm('Reset the schedule to the default? Your dayparts will be replaced.')">Reset to default</button>
 <button type="button" id="sched-clear" title="Empty every daypart, to build a schedule from scratch; nothing changes until you save">Clear all dayparts</button></p>
 </form>
 <script>
@@ -650,7 +732,7 @@ document.getElementById("habit-copy").addEventListener("click", function () {
 <td>{{if .Counted}}<input type="number" name="count" value="{{.Count}}" min="0.5" max="10" step="0.5" aria-label="How many" class="habit-count" form="habit-edit-{{.ID}}">{{end}}</td>
 <td><form method="post" action="/log/edit" class="habit-edit" id="habit-edit-{{.ID}}"><input type="hidden" name="id" value="{{.ID}}">
 <button type="submit" title="Save this log's time{{if .Counted}} and count{{end}}">Save</button></form></td>
-<td><form method="post" action="/log/delete" class="habit-edit"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" title="Remove this log">Remove</button></form></td></tr>
+<td><form method="post" action="/log/delete" class="habit-edit" onsubmit="return confirm('Remove this log ({{.What}}, {{.Day}} {{.Time}})?')"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" title="Remove this log">Remove</button></form></td></tr>
 {{end}}</table></div>
 <p class="muted">This week's logs, Sunday on; older ones stay in the database and the CSV. Change a time or count and press Save; times are your local time.</p>{{else}}<p class="muted">Nothing logged since Sunday.</p>{{end}}
 {{end}}
@@ -662,8 +744,6 @@ document.getElementById("habit-copy").addEventListener("click", function () {
 Each is set in <code>.env</code>: see <a href="/settings">Settings</a>.</p>
 <form method="post"><button type="submit" formaction="/alerts/test">Send test</button>
 <button type="submit" formaction="/alerts/summary" title="Send this morning's summary to the phone now, as it stands; the 8 AM one still goes out">Send morning summary now</button>
-{{if eq .AlertsMsg "test-sent"}}<span class="ok">Test sent: check the phone.</span>{{end}}
-{{if eq .AlertsMsg "summary-sent"}}<span class="ok">Morning summary sent: check the phone.</span>{{end}}
 {{if or (eq .AlertsMsg "test-failed") (eq .AlertsMsg "summary-failed")}}<span class="err">It didn't send; the server log says why.</span>{{end}}</form>
 <h2>Sent</h2>
 {{if .AlertsSent}}<div class="scroll"><table class="devices"><tr><th>Sent</th><th>Alert</th></tr>
@@ -671,6 +751,16 @@ Each is set in <code>.env</code>: see <a href="/settings">Settings</a>.</p>
 {{end}}</table></div>{{else}}<p class="muted">None sent yet.</p>{{end}}
 {{else}}<p class="muted">Off. To get alerts on a phone through Home Assistant, set <code>WH_HA_URL</code>,
 <code>WH_HA_TOKEN</code> and <code>WH_HA_NOTIFY</code> (see the README's "Phone alerts").</p>{{end}}
+{{end}}
+
+{{if eq .Page "notfound"}}
+<div class="notfound">
+{{.BigMark}}
+<p class="code">404</p>
+<p><b>Nothing here.</b></p>
+<p class="muted">There's no page at <code>{{.Missing}}</code>.</p>
+<div class="actions"><a href="/">Back to Today</a><a href="/charts">All charts</a></div>
+</div>
 {{end}}
 
 {{if eq .Page "settings"}}
@@ -681,12 +771,117 @@ Each is set in <code>.env</code>: see <a href="/settings">Settings</a>.</p>
 <p class="muted">Every setting in effect. <b>Bold</b> ones are set in <code>.env</code> or on the
 command line; the rest are defaults. To change one, edit <code>.env</code> on the server and restart
 the service; the README's Configuration says what each does. Secrets are never shown.</p>
+<h2>Connection watcher</h2>
+<p class="muted">The panel checks the server every 30 seconds, and whenever you come back to it; when the
+server stops answering, an overlay says so. To see what it's doing on this device (a Dock or Home Screen app
+keeps its own settings, separate from the browser's), show its status in the corner of every page:</p>
+<p><button type="button" id="watch-toggle"></button></p>
+<script>
+(function () {
+  const b = document.getElementById("watch-toggle");
+  const on = () => { try { return localStorage.getItem("wh-watch-status") === "1"; } catch (e) { return false; } };
+  const label = () => { b.textContent = on() ? "Hide the watcher's status" : "Show the watcher's status"; };
+  b.onclick = () => { try { localStorage.setItem("wh-watch-status", on() ? "0" : "1"); } catch (e) {} location.reload(); };
+  label();
+})();
+</script>
+<h2>In effect</h2>
 {{if .Settings}}<div class="scroll"><table class="devices settings">
 <tr><th>Group</th><th>Setting</th><th>In effect</th></tr>
 {{range .Settings}}<tr><td class="muted">{{.Group}}</td><td><code>{{.Name}}</code></td><td{{if .Set}} class="set"{{end}}>{{.Value}}</td></tr>
 {{end}}</table></div>{{else}}<p class="muted">Not known here: the settings are listed when the daemon serves this page.</p>{{end}}
 {{end}}
 </main>
+{{if .Toast}}<div class="toast" id="toast" role="status">{{.Toast}}</div>{{end}}
+<div class="watch-status" id="watch-status" hidden></div>
+<div class="offline" id="offline" role="alert" aria-live="assertive">
+  <div>{{.Mark}}<h2>Can't reach Wolfe Health</h2>
+  <p>The server isn't answering: it may be restarting or down, or this device may be off the network
+  (or off Tailscale, away from home).</p>
+  <p id="offline-retry">Retrying…</p></div>
+</div>
+<script>
+// the confirmation fades after a few seconds, and leaves the address
+// without its ?saved=, so a reload doesn't show it again
+(function () {
+  const t = document.getElementById("toast");
+  if (t) setTimeout(() => t.classList.add("gone"), 3500);
+  const u = new URL(location.href);
+  let changed = false;
+  for (const k of ["alerts", "habit", "schedule"]) {
+    const v = u.searchParams.get(k);
+    if (v && !/failed|error/.test(v)) { u.searchParams.delete(k); changed = true; }
+  }
+  if (changed) history.replaceState(null, "", u.pathname + u.search + u.hash);
+})();
+
+// ⌘1–⌘6 (Ctrl on Windows) switch tabs
+document.addEventListener("keydown", e => {
+  if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+  const tabs = [...document.querySelectorAll("nav.tabs a")];
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= tabs.length) { e.preventDefault(); location.href = tabs[n - 1].href; }
+});
+
+// the connection watcher. One heartbeat, every second, drives it, so it
+// recovers from whatever the browser does to timers in the background (a
+// Safari Dock app's, or a phone's, can be slowed or held): it gives up on a
+// check that has hung for 8 seconds (a frozen server never answers, and a
+// hung check would otherwise stop the watcher), checks at once when a beat
+// comes far later than due (the page was suspended), and starts the next
+// check when it's due: 30 seconds after an answer, 5 after a miss. Coming
+// back to the page (focus, being shown, the network returning) checks at
+// once too. Two misses in a row shows the overlay; an answer while it's up
+// reloads the page.
+(function () {
+  const box = document.getElementById("offline"), note = document.getElementById("offline-retry");
+  const dbg = document.getElementById("watch-status");
+  let debug = false;
+  try { debug = localStorage.getItem("wh-watch-status") === "1"; } catch (e) {}
+  if (new URLSearchParams(location.search).get("watch") === "1") debug = true; // or ?watch=1, for one visit
+  if (debug && dbg) dbg.hidden = false;
+  const clock = d => d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+  let misses = 0, down = false, inflight = null, started = 0;
+  let beat = Date.now(), due = Date.now() + 30000, last = "none yet";
+  function report() {
+    if (debug && dbg) dbg.textContent = "watcher · last check " + last + " · misses " + misses + (down ? " · showing offline" : "") +
+      (inflight ? " · checking…" : " · next in " + Math.max(0, Math.round((due - Date.now()) / 1000)) + "s");
+  }
+  async function check(why) {
+    if (inflight) return; // one at a time
+    inflight = new AbortController();
+    started = Date.now();
+    report();
+    let ok = false;
+    try { ok = (await fetch("/status", { cache: "no-store", signal: inflight.signal })).ok; } catch (e) {}
+    inflight = null;
+    last = clock(new Date()) + " (" + why + "): " + (ok ? "answered" : "no answer");
+    if (ok) {
+      if (down) { location.reload(); return; }
+      misses = 0;
+    } else if (++misses >= 2 && !down) {
+      down = true;
+      box.classList.add("on");
+    }
+    if (down) note.textContent = "Retrying every few seconds · last tried " + clock(new Date());
+    due = Date.now() + (misses ? 5000 : 30000);
+    report();
+  }
+  setInterval(() => {
+    const now = Date.now();
+    if (inflight && now - started > 8000) inflight.abort(); // hung: count it a miss
+    const late = now - beat > 15000;                        // the page was suspended
+    beat = now;
+    if (late) check("woke up");
+    else if (!inflight && now >= due) check("timer");
+    report();
+  }, 1000);
+  addEventListener("focus", () => check("focus"));
+  addEventListener("pageshow", e => { if (e.persisted) check("shown again"); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) check("visible"); });
+  addEventListener("online", () => check("network back"));
+})();
+</script>
 </body>
 </html>
 {{define "fetch"}}<p class="status">
@@ -704,6 +899,7 @@ the service; the README's Configuration says what each does. Secrets are never s
 {{define "card"}}<div class="card">
   <h3>{{.Title}}</h3>
   <p class="note muted">{{.Note}}</p>
-  <a href="{{.Src}}"><img src="{{.Src}}" alt="{{.Title}} chart" loading="lazy"></a>
+  <a class="shot" href="{{.Src}}"><img src="{{.Src}}" alt="{{.Title}} chart" loading="lazy"
+    onload="this.parentNode.classList.add('loaded')" onerror="this.parentNode.classList.add('failed')"></a>
   <div class="links"><a href="{{.Src}}">open</a><a href="{{.Download}}">download</a></div>
 </div>{{end}}`))

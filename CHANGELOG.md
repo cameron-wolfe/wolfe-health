@@ -13,6 +13,28 @@ To release: add a section here, commit and push, then
 `make release VERSION=vX.Y.Z` (see the README's *Releases*): it tags,
 pushes, and publishes the GitHub release with this section as the notes.
 
+## v1.2.0 — 2026-11-24
+
+Small touches that make the panel feel like an app. Nothing to do on
+upgrade.
+
+- **Chart placeholders.** A chart's box keeps the chart's shape and shows
+  the wolf mark, pulsing, while it draws, then fades the chart in; one that
+  can't be drawn says so instead of showing a broken image.
+- **Tab icons and shortcuts.** An icon on each tab, and ⌘1–⌘6 (Ctrl on
+  Windows) to switch.
+- **Confirmations that fade.** "Schedule saved", "Test sent", "Log removed"
+  show briefly at the bottom and fade; failures stay on the page.
+- **Asked first.** Removing a habit log or resetting the schedule asks to
+  confirm.
+- **A 404 page** with the wolf mark and the way back, for a browser; scripts
+  and displays still get plain text.
+- **Connection watcher.** When the server stops answering, an overlay says
+  so and retries every few seconds, reloading the page once it's back. It
+  runs on a one-second heartbeat, so a Safari Dock app or a phone's Home
+  Screen app, whose timers can be held in the background, still notices; its
+  status can be shown in the corner (Settings, or `?watch=1`).
+
 ## v1.1.0 — 2026-11-24
 
 The web page becomes a control panel. Nothing to do on upgrade: deploy, and

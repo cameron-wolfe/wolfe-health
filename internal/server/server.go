@@ -120,6 +120,7 @@ func (s *server) routes() http.Handler {
 		mux.HandleFunc("GET "+path, s.page(p.Name))
 	}
 	mux.HandleFunc("GET /app/manifest.webmanifest", s.appManifest)
+	mux.HandleFunc("/", s.notFound) // anything not matched above
 	mux.HandleFunc("GET /daily.png", s.imageHandler(scrDaily))
 	mux.HandleFunc("GET /daily-digest.png", s.imageHandler(scrDigest))
 	mux.HandleFunc("GET /night.png", s.imageHandler(scrNight))
