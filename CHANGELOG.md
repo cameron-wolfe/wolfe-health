@@ -10,7 +10,8 @@ Each release, newest first. Versions are `vMAJOR.MINOR.PATCH`:
 - **Patch**: fixes only.
 
 To release: add a section here, commit and push, then
-`make release VERSION=vX.Y.Z` (see the README's *Releases*).
+`make release VERSION=vX.Y.Z` (see the README's *Releases*): it tags,
+pushes, and publishes the GitHub release with this section as the notes.
 
 ## v1.1.0 — 2026-11-24
 

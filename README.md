@@ -1681,8 +1681,10 @@ nothing, **patch** for fixes.
         │                       the tree is clean · main matches GitHub · vet and
         │                       tests pass
         ▼
- an annotated tag, pushed ──► the release page on GitHub (the link it prints;
-        │                     paste the CHANGELOG section as the notes)
+ an annotated tag, pushed ──► the release page on GitHub, published with the
+        │                     version's CHANGELOG section as its notes (with
+        │                     the GitHub CLI, gh, signed in; without it, the
+        │                     link to publish it by hand)
         ▼
  make deploy ──► the index page says "Running vX.Y.Z (…)"
 ```
