@@ -25,6 +25,7 @@ type card struct {
 func (c card) Download() string { return withParam(c.Src, "download", "1") }
 
 type indexData struct {
+	Page    string // which page: today, charts, display, habits, alerts, settings
 	Status  Status
 	Now     time.Time
 	W, H    int
@@ -33,6 +34,7 @@ type indexData struct {
 	AsOf    time.Time // that date, for the page's wording
 	MaxDate string    // today, the latest date the picker allows
 	Today   []card
+	Key     []card // Today's page: the few charts most worth a glance
 	Trends  []card
 	More    []card
 	Nights  []card
@@ -71,6 +73,26 @@ type indexData struct {
 	AlertsRules  []string   // each alert that's on, worded
 	AlertsSent   []alertRow // the latest sent, newest first
 	AlertsMsg    string     // after Send test: "sent" or "failed"
+
+	Settings []Setting // every setting in effect, for the Settings page
+}
+
+// Setting is one setting in effect, for the Settings page.
+type Setting struct {
+	Group string // "Daemon", "Displays", "Phone alerts", …
+	Name  string // the .env name: "WH_FETCH_EVERY"
+	Value string // as in effect; a secret's is masked
+	Set   bool   // set in .env or on the command line, rather than the default
+}
+
+// pages are the panel's pages, in the tab bar's order: path, tab label.
+var pages = []struct{ Name, Path, Label string }{
+	{"today", "/", "Today"},
+	{"charts", "/charts", "Charts"},
+	{"display", "/display", "Display"},
+	{"habits", "/habits", "Habits"},
+	{"alerts", "/alerts", "Alerts"},
+	{"settings", "/settings", "Settings"},
 }
 
 // schedRow is one daypart in the schedule form.
@@ -96,11 +118,17 @@ var (
 	favicon  = template.URL("data:image/svg+xml," + url.PathEscape(chart.WolfMarkSVG(64, "#111", "#fff")))
 )
 
-// index is the human front door: every chart on one page, each with a link
-// to open it alone and one to download it. ?w=&h= resize every image on the
-// page (handy for trying a panel's resolution), and ?days= sets the trends'
-// window; both carry through to the image and download links.
-func (s *server) index(w http.ResponseWriter, r *http.Request) {
+// page serves one of the panel's pages (pages): the same data, a
+// different part of it shown, under a shared masthead and tab bar.
+func (s *server) page(name string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) { s.index(w, r, name) }
+}
+
+// index builds the panel's data and renders the page named: Today, the
+// charts (each with a link to open it alone and one to download it; ?w=&h=
+// resize every image, ?days= sets the trends' window, ?date= draws them as
+// of a day), the display, habits, alerts and settings.
+func (s *server) index(w http.ResponseWriter, r *http.Request, page string) {
 	width, height, err := size(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -143,7 +171,7 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 		return path + "?" + q.Encode()
 	}
 
-	d := indexData{Status: s.status.Get(), Now: s.now(), W: width, H: height, Days: days,
+	d := indexData{Page: page, Settings: s.settings, Status: s.status.Get(), Now: s.now(), W: width, H: height, Days: days,
 		Sizes: []string{"800x480", "640x384", "960x540", "1200x825"},
 		AsOf:  base, MaxDate: s.today().Format("2006-01-02")}
 	if dated {
@@ -213,6 +241,15 @@ func (s *server) index(w http.ResponseWriter, r *http.Request) {
 			Src: src("/oxygen.png", nil)},
 		{Title: "Weekly rhythm", Note: "averages by day of week, last 365 days",
 			Src: src("/weekly-rhythm.png", nil)},
+	}
+
+	// Today's charts: the few most worth a glance, from the lists above
+	for _, want := range []string{"Daily brief", "Early warning", "Last night", "WolfeSense · Readiness"} {
+		for _, c := range append(append([]card{}, d.Today...), d.More...) {
+			if c.Title == want {
+				d.Key = append(d.Key, c)
+			}
+		}
 	}
 
 	devices, err := s.db.Devices(r.Context())
@@ -344,41 +381,68 @@ func ago(now, t time.Time) string {
 var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
 	"ago":   ago,
 	"clock": func(t time.Time) string { return t.Format("Mon 3:04 PM") },
+	"pages": func() any { return pages },
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Wolfe Health</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Wolfe Health">
+<meta name="theme-color" content="#111111">
+<link rel="manifest" href="/app/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/emulator/icon.png">
+<title>Wolfe Health{{range pages}}{{if and (eq .Name $.Page) (ne .Name "today")}} · {{.Label}}{{end}}{{end}}</title>
 <link rel="icon" href="{{.Favicon}}">
 <style>
-  :root { --ink:#111; --muted:#666; --line:#ddd; --bg:#fafafa; --card:#fff; --bad:#a00; }
+  :root { --ink:#111; --muted:#666; --line:#ddd; --bg:#fafafa; --card:#fff; --bad:#a00; --tab:#2a2a2a; }
   @media (prefers-color-scheme: dark) {
     :root { --ink:#eee; --muted:#9a9a9a; --line:#333; --bg:#151515; --card:#1e1e1e; --bad:#f77; }
   }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--ink);
          font:15px/1.4 system-ui, -apple-system, Segoe UI, sans-serif; }
-  main { padding:16px; }
-  /* the masthead: the same black band, mark and wordmark as on every image */
-  .masthead { display:flex; align-items:center; gap:12px; background:#111; color:#fff;
-              padding:10px 16px; }
+  main { padding:16px max(16px, env(safe-area-inset-right)) 32px max(16px, env(safe-area-inset-left));
+         max-width:1400px; margin:0 auto; }
+  /* the masthead: the same black band, mark and wordmark as on every image,
+     with the panel's tabs under it */
+  header { position:sticky; top:0; z-index:5; background:#111; color:#fff;
+           padding-top:env(safe-area-inset-top); }
+  .masthead { display:flex; align-items:center; gap:12px; padding:10px max(16px, env(safe-area-inset-left)) 6px; }
   .masthead svg { display:block; flex:none; }
   .wordmark { font-weight:700; font-size:16px; letter-spacing:.24em; }
   .masthead .when { margin-left:auto; font-size:13px; letter-spacing:.08em; opacity:.8; }
+  nav.tabs { display:flex; gap:4px; overflow-x:auto; padding:0 max(12px, env(safe-area-inset-left)) 8px;
+             scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  nav.tabs::-webkit-scrollbar { display:none; }
+  nav.tabs a { color:#cfcfcf; text-decoration:none; padding:6px 14px; border-radius:999px;
+               white-space:nowrap; font-size:14px; }
+  nav.tabs a:hover { background:var(--tab); color:#fff; }
+  nav.tabs a.on { background:#fff; color:#111; font-weight:600; }
+  h1 { font-size:20px; margin:4px 0 12px; }
   h2 { font-size:17px; margin:28px 0 10px; }
+  h3 { font-size:15px; margin:22px 0 6px; }
   .muted { color:var(--muted); }
   .bad { color:var(--bad); }
+  .ok { color:var(--muted); }
+  .err { font-weight:600; }
   .status { margin:0 0 4px; }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:0 0 16px; }
+  .actions { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 0; }
+  .actions a, .actions button { display:inline-block; padding:6px 12px; border:1px solid var(--line);
+             border-radius:8px; background:var(--card); color:inherit; text-decoration:none; font:inherit; font-size:14px; cursor:pointer; }
   form { display:flex; flex-wrap:wrap; gap:8px 16px; align-items:center; margin:12px 0 0; }
   form label { color:var(--muted); }
   input, select, button { font:inherit; }
+  input[type=number] { width:5.5em; }
+  .scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; }
   .habits td { padding:2px 8px 2px 0; vertical-align:middle; }
   .habits th.habit-day { text-align:left; font-weight:600; padding:14px 0 4px; border-bottom:1px solid var(--line); }
   .habits tr:first-child th.habit-day { padding-top:4px; }
   .habit-edit { display:flex; gap:6px; align-items:center; flex-wrap:wrap; margin:0; }
   .habit-count { width:4.5em; }
-  input[type=number] { width:5.5em; }
   .grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 420px), 1fr)); gap:16px; }
   .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:12px; }
   .card h3 { font-size:15px; margin:0; }
@@ -389,41 +453,50 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
   a { color:inherit; }
   ul.nights { list-style:none; padding:0; margin:0; display:grid;
               grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:6px 16px; }
-  code { font-size:13px; }
+  code { font-size:13px; overflow-wrap:anywhere; }
   table.devices { border-collapse:collapse; font-size:14px; }
-  table.devices th, table.devices td { text-align:left; padding:4px 14px 4px 0; border-bottom:1px solid var(--line); }
+  table.devices th, table.devices td { text-align:left; padding:4px 14px 4px 0; border-bottom:1px solid var(--line); vertical-align:top; }
   table.devices th { color:var(--muted); font-weight:600; }
+  table.settings td.set { font-weight:600; }
   ul.logs { margin:4px 0 0; padding-left:18px; font-size:13px; }
-  h3 { font-size:15px; margin:22px 0 6px; }
-  .alert { border:2px solid var(--ink); padding:8px 12px; margin:0 0 12px; }
-  .ok { color:var(--muted); }
-  .err { font-weight:600; }
+  .alert { border:2px solid var(--ink); padding:8px 12px; margin:0 0 12px; border-radius:6px; }
   form.sched select, form.sched input[type=time] { font-size:14px; }
   form.sched input[type=number] { width:4.5em; }
   tr.active td { background:var(--line); }
+  @media (max-width: 600px) {
+    .masthead .when { display:none; }
+    h2 { margin-top:22px; }
+  }
 </style>
 </head>
 <body>
-<header class="masthead">
-  {{.Mark}}
-  <span class="wordmark">WOLFE HEALTH</span>
-  <span class="when">{{clock .Now}}</span>
+<header>
+  <div class="masthead">
+    {{.Mark}}
+    <span class="wordmark">WOLFE HEALTH</span>
+    <span class="when">{{clock .Now}}</span>
+  </div>
+  <nav class="tabs">{{range pages}}<a href="{{.Path}}"{{if eq .Name $.Page}} class="on" aria-current="page"{{end}}>{{.Label}}</a>{{end}}</nav>
 </header>
 <main>
 {{if .Alert}}<p class="alert"><b>Body signals:</b> {{.Alert}} · <a href="/body-signals.png">see the chart</a></p>{{end}}
-<p class="status">
-  Last fetch:
-  {{if .Status.Fetching}}<b>fetching now</b><span class="muted">{{if .Status.Backfill}}, back-filling after a start{{end}}, since {{clock .Status.LastAttempt}}{{if not .Status.LastSuccess.IsZero}} · last success {{ago .Now .Status.LastSuccess}}{{end}}</span>
-  {{else if .Status.LastAttempt.IsZero}}{{if .Status.LastSuccess.IsZero}}<span class="muted">not yet run</span>{{else}}{{ago .Now .Status.LastSuccess}} <span class="muted">— before this start</span>{{end}}
-  {{else if .Healthy}}{{ago .Now .Status.LastSuccess}} <span class="muted">— {{if .Status.Restored}}before this start{{else}}{{.Status.LastResult}}{{end}}</span>
-  {{else}}<span class="bad">failed {{ago .Now .Status.LastAttempt}}: {{.Status.LastError}}</span>
-    {{if not .Status.LastSuccess.IsZero}}<span class="muted">(last success {{ago .Now .Status.LastSuccess}})</span>{{end}}
-  {{end}}
-</p>
-{{if not .Status.NextFetch.IsZero}}<p class="status muted">Next fetch {{clock .Status.NextFetch}}</p>{{end}}
-<p class="status muted">Running {{.Version}}</p>
-{{if .Status.Webhooks}}<p class="status muted">Oura webhooks: {{.Status.Webhooks}}{{if not .Status.LastWebhook.IsZero}} · last notification {{ago .Now .Status.LastWebhook}} ({{.Status.LastWebhookEvent}}){{else}} · no notification yet{{end}}</p>{{end}}
 
+{{if eq .Page "today"}}
+<div class="panel">
+{{template "fetch" .}}
+<div class="actions">
+  <a href="/emulator?show=daily">Open the display</a>
+  <a href="/charts">All charts</a>
+  {{if .AlertsTo}}<form method="post" action="/alerts/summary" style="margin:0"><button type="submit">Send morning summary</button></form>{{end}}
+</div>
+</div>
+<div class="grid">
+{{range .Key}}{{template "card" .}}{{end}}
+</div>
+{{end}}
+
+{{if eq .Page "charts"}}
+<h1>Charts</h1>
 <form method="get">
   <label>Size
     <select name="size" onchange="var p=this.value.split('x');this.form.w.value=p[0];this.form.h.value=p[1];">
@@ -461,33 +534,20 @@ each screen as it would have looked that day. <a href="?w={{.W}}&amp;h={{.H}}&am
 {{range .Nights}}<li>{{.Title}} — <a href="{{.Src}}">open</a> · <a href="{{.Download}}">download</a></li>{{end}}
 </ul>
 {{else}}<p class="muted">No sleep periods stored yet.</p>{{end}}
-
-<h2>Displays</h2>
-{{if .Devices}}
-<table class="devices">
-<tr><th>Device</th><th>Model</th><th>Firmware</th><th>Battery</th><th>Signal</th><th>Last update</th><th>Showing</th></tr>
-{{range .Devices}}<tr><td>{{.ID}}</td><td>{{.Model}}</td><td>{{.Firmware}}</td><td>{{.Battery}}</td><td>{{.Signal}}</td><td>{{.Seen}}</td><td>{{.Screen}}</td></tr>
-{{end}}</table>
-{{if .DeviceLog}}<p class="muted">Recent device logs:</p>
-<ul class="logs">{{range .DeviceLog}}<li><code>{{clock .At}}</code> {{.Message}}</li>{{end}}</ul>{{end}}
-{{else}}
-<p>No display paired yet. To connect a TRMNL: hold its button for 5 seconds, join the
-<b>TRMNL</b> Wi-Fi network from your phone, choose <b>Custom server</b>, and enter
-<code>{{.ServerURL}}</code>, then your home Wi-Fi.</p>
 {{end}}
-<p class="muted">Displays wake every {{.Refresh}} (sooner when the schedule changes screen) and get
-the {{.Depth}}. Custom server address: <code>{{.ServerURL}}</code></p>
 
-<h3 id="warning">Early-warning banner</h3>
-<p>{{if .Alert}}<b>Showing</b> on every screen: {{.Alert}}{{else}}Hidden: {{.AlertWhy}}.{{end}}
-<a href="/daily.png?alert=preview">Preview the banner</a> (add <code>?alert=preview</code> to any image; displays never get it).</p>
+{{if eq .Page "display"}}
+<h1>Display</h1>
+<div class="panel">
+<p class="status">Showing now: <b>{{.Showing}}</b></p>
+<div class="actions"><a href="/emulator">Open the display emulator</a><a href="/current.png">/current.png</a></div>
+</div>
 
-<h3 id="schedule">Display schedule</h3>
-<p>Showing now: <b>{{.Showing}}</b> · also at <a href="/current.png">/current.png</a> · <a href="/emulator">display emulator</a></p>
+<h2 id="schedule">Schedule</h2>
 {{if .SchedMsg}}<p class="ok">{{.SchedMsg}}</p>{{end}}
 {{if .SchedErr}}<p class="bad">Not saved: {{.SchedErr}}</p>{{end}}
 <form method="post" action="/schedule" class="sched">
-<table class="devices">
+<div class="scroll"><table class="devices">
 <tr><th>From</th><th colspan="4">Screens, in rotation order</th></tr>
 {{$opts := .Options}}
 {{range $row := .Sched}}<tr{{if $row.Active}} class="active"{{end}}>
@@ -497,7 +557,7 @@ the {{.Depth}}. Custom server address: <code>{{.ServerURL}}</code></p>
     {{range $opts}}<option value="{{.Name}}"{{if eq .Name (index $row.Screens $j)}} selected{{end}}>{{.Title}}</option>{{end}}
   </select></td>{{end}}
 </tr>
-{{end}}</table>
+{{end}}</table></div>
 <p>Each daypart runs until the next one starts; screens rotate every
 <input type="number" name="hold" value="{{.Hold}}" min="1" max="720" step="1"> minutes.
 Clear a row's time to remove it; fill a blank row to add one.</p>
@@ -523,22 +583,37 @@ document.getElementById("sched-clear").addEventListener("click", () => {
 });
 </script>
 
-<h2 id="alerts">Phone alerts</h2>
-{{if .AlertsTo}}<p class="muted">Sent to {{.AlertsTo}}, once each, {{.AlertsLimits}}
-{{if .AlertsRules}}for {{range $i, $r := .AlertsRules}}{{if $i}}; {{end}}{{$r}}{{end}}.{{else}}but every alert is turned off (<code>WH_ALERTS_OFF</code>).{{end}}
-Each is set in <code>.env</code>: see the README's Configuration.</p>
-<form method="post"><button type="submit" formaction="/alerts/test">Send test</button>
-<button type="submit" formaction="/alerts/summary" title="Send this morning's summary to the phone now, as it stands; the 8 AM one still goes out">Send morning summary now</button>
-{{if eq .AlertsMsg "test-sent"}}<span class="ok">Test sent: check the phone.</span>{{end}}
-{{if eq .AlertsMsg "summary-sent"}}<span class="ok">Morning summary sent: check the phone.</span>{{end}}
-{{if or (eq .AlertsMsg "test-failed") (eq .AlertsMsg "summary-failed")}}<span class="err">It didn't send; the server log says why.</span>{{end}}</form>
-{{if .AlertsSent}}<table class="devices"><tr><th>Sent</th><th>Alert</th></tr>
-{{range .AlertsSent}}<tr><td>{{.At}}</td><td><b>{{.Title}}</b><br><span class="muted">{{.Message}}</span></td></tr>
-{{end}}</table>{{else}}<p class="muted">None sent yet.</p>{{end}}
-{{else}}<p class="muted">Off. To get alerts on a phone through Home Assistant, set <code>WH_HA_URL</code>,
-<code>WH_HA_TOKEN</code> and <code>WH_HA_NOTIFY</code> (see the README's "Phone alerts").</p>{{end}}
+<h2>Displays</h2>
+{{if .Devices}}
+<div class="scroll"><table class="devices">
+<tr><th>Device</th><th>Model</th><th>Firmware</th><th>Battery</th><th>Signal</th><th>Last update</th><th>Showing</th></tr>
+{{range .Devices}}<tr><td>{{.ID}}</td><td>{{.Model}}</td><td>{{.Firmware}}</td><td>{{.Battery}}</td><td>{{.Signal}}</td><td>{{.Seen}}</td><td>{{.Screen}}</td></tr>
+{{end}}</table></div>
+{{if .DeviceLog}}<p class="muted">Recent device logs:</p>
+<ul class="logs">{{range .DeviceLog}}<li><code>{{clock .At}}</code> {{.Message}}</li>{{end}}</ul>{{end}}
+{{else}}
+<p>No display paired yet. To connect a TRMNL: hold its button for 5 seconds, join the
+<b>TRMNL</b> Wi-Fi network from your phone, choose <b>Custom server</b>, and enter
+<code>{{.ServerURL}}</code>, then your home Wi-Fi.</p>
+{{end}}
+<p class="muted">Displays wake every {{.Refresh}} (sooner when the schedule changes screen) and get
+the {{.Depth}}. Custom server address: <code>{{.ServerURL}}</code></p>
 
-<h2 id="habits">Habit log</h2>
+<h3 id="warning">Early-warning banner</h3>
+<p>{{if .Alert}}<b>Showing</b> on every screen: {{.Alert}}{{else}}Hidden: {{.AlertWhy}}.{{end}}
+<a href="/daily.png?alert=preview">Preview the banner</a> (add <code>?alert=preview</code> to any image; displays never get it).</p>
+
+<h3>For other displays</h3>
+<p class="muted">Each image is its own URL, rendered fresh on request, and answers
+<code>If-None-Match</code> with <code>304</code> when unchanged. Parameters:
+<code>w</code>, <code>h</code> (all images), <code>days</code> (trends, stages, breakdown),
+<code>day=YYYY-MM-DD</code> (nights, the wake-up day; heart rate, the day), <code>month=YYYY-MM</code> (stress and score calendars),
+<code>bits=1</code> or <code>bits=2</code> (e-ink: black and white, or four grays),
+<code>format=bmp</code> (1-bit BMP), <code>download=1</code>. Fetch status as JSON: <a href="/status">/status</a>.</p>
+{{end}}
+
+{{if eq .Page "habits"}}
+<h1 id="habits">Habits</h1>
 <p class="muted">What you had or did, logged with a Siri shortcut: say "log a habit" and pick from
 {{range $i, $n := .HabitNames}}{{if $i}}, {{end}}{{$n}}{{end}}.
 One caffeine log is a double shot of espresso, one alcohol log one drink; meals, sweets and workouts are judged late or not against your bedtime.
@@ -567,7 +642,7 @@ document.getElementById("habit-copy").addEventListener("click", function () {
   }
 });
 </script>
-{{if .Habits}}<table class="habits">
+{{if .Habits}}<div class="scroll"><table class="habits">
 {{range .Habits}}{{if .DayStart}}<tr><th colspan="5" class="habit-day">{{.Day}}</th></tr>
 {{end}}<tr><td>{{.What}}</td>
 {{/* the time and count sit in their own cells, joined to the Save form by
@@ -576,19 +651,56 @@ document.getElementById("habit-copy").addEventListener("click", function () {
 <td><form method="post" action="/log/edit" class="habit-edit" id="habit-edit-{{.ID}}"><input type="hidden" name="id" value="{{.ID}}">
 <button type="submit" title="Save this log's time{{if .Counted}} and count{{end}}">Save</button></form></td>
 <td><form method="post" action="/log/delete" class="habit-edit"><input type="hidden" name="id" value="{{.ID}}"><button type="submit" title="Remove this log">Remove</button></form></td></tr>
-{{end}}</table>
+{{end}}</table></div>
 <p class="muted">This week's logs, Sunday on; older ones stay in the database and the CSV. Change a time or count and press Save; times are your local time.</p>{{else}}<p class="muted">Nothing logged since Sunday.</p>{{end}}
+{{end}}
 
-<h2>For other displays</h2>
-<p class="muted">Each image is its own URL, rendered fresh on request, and answers
-<code>If-None-Match</code> with <code>304</code> when unchanged. Parameters:
-<code>w</code>, <code>h</code> (all images), <code>days</code> (trends, stages, breakdown),
-<code>day=YYYY-MM-DD</code> (nights, the wake-up day; heart rate, the day), <code>month=YYYY-MM</code> (stress and score calendars),
-<code>bits=1</code> or <code>bits=2</code> (e-ink: black and white, or four grays),
-<code>format=bmp</code> (1-bit BMP), <code>download=1</code>. Fetch status as JSON: <a href="/status">/status</a>.</p>
+{{if eq .Page "alerts"}}
+<h1 id="alerts">Phone alerts</h1>
+{{if .AlertsTo}}<p class="muted">Sent to {{.AlertsTo}}, once each, {{.AlertsLimits}}
+{{if .AlertsRules}}for {{range $i, $r := .AlertsRules}}{{if $i}}; {{end}}{{$r}}{{end}}.{{else}}but every alert is turned off (<code>WH_ALERTS_OFF</code>).{{end}}
+Each is set in <code>.env</code>: see <a href="/settings">Settings</a>.</p>
+<form method="post"><button type="submit" formaction="/alerts/test">Send test</button>
+<button type="submit" formaction="/alerts/summary" title="Send this morning's summary to the phone now, as it stands; the 8 AM one still goes out">Send morning summary now</button>
+{{if eq .AlertsMsg "test-sent"}}<span class="ok">Test sent: check the phone.</span>{{end}}
+{{if eq .AlertsMsg "summary-sent"}}<span class="ok">Morning summary sent: check the phone.</span>{{end}}
+{{if or (eq .AlertsMsg "test-failed") (eq .AlertsMsg "summary-failed")}}<span class="err">It didn't send; the server log says why.</span>{{end}}</form>
+<h2>Sent</h2>
+{{if .AlertsSent}}<div class="scroll"><table class="devices"><tr><th>Sent</th><th>Alert</th></tr>
+{{range .AlertsSent}}<tr><td>{{.At}}</td><td><b>{{.Title}}</b><br><span class="muted">{{.Message}}</span></td></tr>
+{{end}}</table></div>{{else}}<p class="muted">None sent yet.</p>{{end}}
+{{else}}<p class="muted">Off. To get alerts on a phone through Home Assistant, set <code>WH_HA_URL</code>,
+<code>WH_HA_TOKEN</code> and <code>WH_HA_NOTIFY</code> (see the README's "Phone alerts").</p>{{end}}
+{{end}}
+
+{{if eq .Page "settings"}}
+<h1>Settings</h1>
+<div class="panel">
+{{template "fetch" .}}
+</div>
+<p class="muted">Every setting in effect. <b>Bold</b> ones are set in <code>.env</code> or on the
+command line; the rest are defaults. To change one, edit <code>.env</code> on the server and restart
+the service; the README's Configuration says what each does. Secrets are never shown.</p>
+{{if .Settings}}<div class="scroll"><table class="devices settings">
+<tr><th>Group</th><th>Setting</th><th>In effect</th></tr>
+{{range .Settings}}<tr><td class="muted">{{.Group}}</td><td><code>{{.Name}}</code></td><td{{if .Set}} class="set"{{end}}>{{.Value}}</td></tr>
+{{end}}</table></div>{{else}}<p class="muted">Not known here: the settings are listed when the daemon serves this page.</p>{{end}}
+{{end}}
 </main>
 </body>
 </html>
+{{define "fetch"}}<p class="status">
+  Last fetch:
+  {{if .Status.Fetching}}<b>fetching now</b><span class="muted">{{if .Status.Backfill}}, back-filling after a start{{end}}, since {{clock .Status.LastAttempt}}{{if not .Status.LastSuccess.IsZero}} · last success {{ago .Now .Status.LastSuccess}}{{end}}</span>
+  {{else if .Status.LastAttempt.IsZero}}{{if .Status.LastSuccess.IsZero}}<span class="muted">not yet run</span>{{else}}{{ago .Now .Status.LastSuccess}} <span class="muted">— before this start</span>{{end}}
+  {{else if .Healthy}}{{ago .Now .Status.LastSuccess}} <span class="muted">— {{if .Status.Restored}}before this start{{else}}{{.Status.LastResult}}{{end}}</span>
+  {{else}}<span class="bad">failed {{ago .Now .Status.LastAttempt}}: {{.Status.LastError}}</span>
+    {{if not .Status.LastSuccess.IsZero}}<span class="muted">(last success {{ago .Now .Status.LastSuccess}})</span>{{end}}
+  {{end}}
+</p>
+{{if not .Status.NextFetch.IsZero}}<p class="status muted">Next fetch {{clock .Status.NextFetch}}</p>{{end}}
+<p class="status muted">Running {{.Version}}</p>
+{{if .Status.Webhooks}}<p class="status muted">Oura webhooks: {{.Status.Webhooks}}{{if not .Status.LastWebhook.IsZero}} · last notification {{ago .Now .Status.LastWebhook}} ({{.Status.LastWebhookEvent}}){{else}} · no notification yet{{end}}</p>{{end}}{{end}}
 {{define "card"}}<div class="card">
   <h3>{{.Title}}</h3>
   <p class="note muted">{{.Note}}</p>

@@ -12,6 +12,23 @@ Each release, newest first. Versions are `vMAJOR.MINOR.PATCH`:
 To release: add a section here, commit and push, then
 `make release VERSION=vX.Y.Z` (see the README's *Releases*).
 
+## v1.1.0 — 2026-11-24
+
+The web page becomes a control panel. Nothing to do on upgrade: deploy, and
+the old address opens the new Today tab.
+
+- **Tabs.** The one long page is now six, under the masthead: **Today**
+  (fetch status, the running build, quick actions, and the daily brief,
+  early warning, last night and readiness), **Charts**, **Display**
+  (schedule, TRMNLs, the early-warning banner), **Habits**, **Alerts** and
+  **Settings**. Each form returns to its own tab.
+- **Settings page.** Every setting in effect, grouped, with the ones set in
+  `.env` or on the command line in bold and secrets hidden.
+- **Installable.** Add to Home Screen (or Add to Dock on a Mac) opens the
+  panel like an app, without browser bars.
+- **Phone-sized.** Tabs scroll sideways, wide tables scroll within the page,
+  and everything fits a phone's width.
+
 ## v1.0.0 — 2026-11-24
 
 The first release: Oura Ring data collected, charted, displayed, tapped

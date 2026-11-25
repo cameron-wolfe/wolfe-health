@@ -84,6 +84,7 @@ type server struct {
 	trmnlCfg TRMNLConfig
 	alerts   *alerts.Engine // nil: alerts are off
 	verbose  bool           // log every request
+	settings []Setting      // every setting in effect, for the Settings page
 }
 
 // Config is the server's optional settings.
@@ -93,6 +94,9 @@ type Config struct {
 	// LogAll logs every request; otherwise routine reads are left out
 	// (logRequests)
 	LogAll bool
+	// Settings are every setting in effect, for the Settings page; the
+	// daemon fills them in (nil: the page says they aren't known)
+	Settings []Setting
 }
 
 // New returns the HTTP handler for the given database and fetch status.
@@ -102,12 +106,20 @@ func New(db *store.DB, status *Tracker, cfg Config) http.Handler {
 
 func newServer(db *store.DB, status *Tracker, cfg Config) *server {
 	cfg.TRMNL.defaults()
-	return &server{db: db, status: status, now: time.Now, trmnl: newTRMNLState(), trmnlCfg: cfg.TRMNL, alerts: cfg.Alerts, verbose: cfg.LogAll}
+	return &server{db: db, status: status, now: time.Now, trmnl: newTRMNLState(), trmnlCfg: cfg.TRMNL, alerts: cfg.Alerts, verbose: cfg.LogAll, settings: cfg.Settings}
 }
 
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.index)
+	// the control panel: a page per tab, sharing one layout (index.go)
+	for _, p := range pages {
+		path := p.Path
+		if path == "/" {
+			path = "/{$}"
+		}
+		mux.HandleFunc("GET "+path, s.page(p.Name))
+	}
+	mux.HandleFunc("GET /app/manifest.webmanifest", s.appManifest)
 	mux.HandleFunc("GET /daily.png", s.imageHandler(scrDaily))
 	mux.HandleFunc("GET /daily-digest.png", s.imageHandler(scrDigest))
 	mux.HandleFunc("GET /night.png", s.imageHandler(scrNight))

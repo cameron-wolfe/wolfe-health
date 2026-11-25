@@ -163,9 +163,25 @@ func TestDownloadSetsFilename(t *testing.T) {
 
 // The index lists every chart, carries ?w=&h= into image and download
 // links, lists the stored nights, and shows a failed fetch.
+// The panel's pages: Today has the fetch status, the tab bar and the key
+// charts; Charts has every chart, sized as asked, and the recent nights;
+// each other page answers under the same tabs.
 func TestIndex(t *testing.T) {
 	h := testServer(t)
-	body := get(t, h, "/?w=640&h=384").Body.String()
+	today := get(t, h, "/").Body.String()
+	for _, want := range []string{"not yet run", `<a href="/charts">Charts</a>`, `class="on" aria-current="page">Today`,
+		`src="/daily.png"`, `src="/early-warning.png"`, "Running "} {
+		if !strings.Contains(today, want) {
+			t.Errorf("today missing %q", want)
+		}
+	}
+	for _, p := range pages {
+		rec := get(t, h, p.Path)
+		if rec.Code != 200 || !strings.Contains(rec.Body.String(), `aria-current="page">`+p.Label+`</a>`) {
+			t.Errorf("%s: %d, or its tab isn't marked", p.Path, rec.Code)
+		}
+	}
+	body := get(t, h, "/charts?w=640&h=384").Body.String()
 	for _, want := range []string{
 		`src="/daily.png?h=384&amp;w=640"`,
 		`src="/trends.png?days=30&amp;h=384&amp;w=640"`,
@@ -174,7 +190,6 @@ func TestIndex(t *testing.T) {
 		`src="/stress-month.png?h=384&amp;month=2026-10&amp;w=640"`,
 		`src="/sleep-breakdown.png?days=30&amp;h=384&amp;w=640"`,
 		`src="/sleep-stages.png?days=30&amp;h=384&amp;w=640"`,
-		"not yet run",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("index missing %q", want)
@@ -346,7 +361,7 @@ func mastheadRows(img *image.Gray) string {
 // into the nights list, whose links name their own night.
 func TestIndexAsOfDate(t *testing.T) {
 	h := testServer(t)
-	body := get(t, h, "/?date=2026-11-12").Body.String()
+	body := get(t, h, "/charts?date=2026-11-12").Body.String()
 	for _, want := range []string{
 		`src="/daily.png?date=2026-11-12"`,
 		`src="/stress-month.png?date=2026-11-12&amp;month=2026-10"`,
@@ -365,11 +380,11 @@ func TestIndexAsOfDate(t *testing.T) {
 	if strings.Contains(body, `date=2026-11-12&amp;day=`) {
 		t.Error("the nights list shouldn't carry the page's date")
 	}
-	if !strings.Contains(get(t, h, "/").Body.String(), `night.png?day=2026-11-19`) ||
-		strings.Contains(get(t, h, "/?date=2026-11-18").Body.String(), `night.png?day=2026-11-19`) {
+	if !strings.Contains(get(t, h, "/charts").Body.String(), `night.png?day=2026-11-19`) ||
+		strings.Contains(get(t, h, "/charts?date=2026-11-18").Body.String(), `night.png?day=2026-11-19`) {
 		t.Error("the nights list should stop at the date of interest")
 	}
-	if rec := get(t, h, "/?date=2027-01-01"); rec.Code != 400 {
+	if rec := get(t, h, "/charts?date=2027-01-01"); rec.Code != 400 {
 		t.Errorf("future date: %d", rec.Code)
 	}
 }

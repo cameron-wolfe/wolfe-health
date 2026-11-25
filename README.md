@@ -506,7 +506,14 @@ phone, not the server, is the hold-up. Below 20% the battery reads
 `wolfe-health daemon` is the deployed form: one long-running process that
 fetches from Oura on startup and every hour, and serves every chart over
 HTTP the whole time. Open `http://<host>:8090` in any browser on the network
-for a page showing each chart, with links to open or download it.
+for the **control panel**: a page per tab under the masthead. **Today** has
+the fetch status, the running build, quick actions and the key charts
+(daily brief, early warning, last night, readiness); **Charts** every chart,
+each with links to open or download it; **Display** what's showing, the
+schedule, paired TRMNLs and the early-warning banner; **Habits** the habit
+log; **Alerts** phone alerts; **Settings** every setting in effect (set ones
+in bold, secrets hidden). On a phone, tablet or Mac, Add to Home Screen (or
+Add to Dock) opens it like an app, with no browser bars.
 
 ```bash
 make daemon                                 # run it here: http://localhost:8090
@@ -515,7 +522,9 @@ make daemon                                 # run it here: http://localhost:8090
 
 | Endpoint | Returns |
 |---|---|
-| `/` | index page: every chart, fetch status, size and trend-window controls, the display schedule, the habit log |
+| `/` | the control panel's **Today** page: fetch status, the running build, the key charts |
+| `/charts`, `/display`, `/habits`, `/alerts`, `/settings` | the panel's other pages: every chart (with size, trend-window and as-of controls); the display schedule, paired TRMNLs and the banner; the habit log; phone alerts; every setting in effect |
+| `/app/manifest.webmanifest` | names the panel a web app, so Add to Home Screen (or Add to Dock on a Mac) opens it like one |
 | `/<screen>.png` | each screen in the [Charts](#charts) table; `/line/…` redirects to `/trends.png`, `/wolfemoon.png` (WolfePhase's first name) still works |
 | `/current.png` | whatever the display schedule shows right now |
 | `/emulator` | a page emulating the display: the current screen as a TRMNL gets it, refreshed every minute; tap it for [detail views](#detail-views) |

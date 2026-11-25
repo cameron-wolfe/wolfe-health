@@ -344,7 +344,7 @@ func (s *server) saveSchedule(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	back := func(q string) { http.Redirect(w, r, "/?"+q+"#schedule", http.StatusSeeOther) }
+	back := func(q string) { http.Redirect(w, r, "/display?"+q+"#schedule", http.StatusSeeOther) }
 	if r.PostForm.Get("reset") == "1" {
 		if err := s.db.DeleteSetting(r.Context(), scheduleKey); err != nil {
 			serverError(w, err)

@@ -54,5 +54,5 @@ func (s *server) sendNow(w http.ResponseWriter, r *http.Request, what string, se
 		log.Printf("alerts: %s: %v", what, err)
 		result = what + "-failed"
 	}
-	http.Redirect(w, r, "/?alerts="+result+"#alerts", http.StatusSeeOther)
+	http.Redirect(w, r, "/alerts?alerts="+result, http.StatusSeeOther)
 }

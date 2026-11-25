@@ -102,7 +102,7 @@ func TestHabitLog(t *testing.T) {
 		t.Fatalf("stored: %+v", logs)
 	}
 
-	page := do("GET", "/", "", "", nil)
+	page := do("GET", "/habits", "", "", nil)
 	if body := page.Body.String(); !strings.Contains(body, tok) || !strings.Contains(body, "Caffeine · 1 double shot of espresso") {
 		t.Error("the index page doesn't show the token and the logs")
 	}
@@ -210,7 +210,7 @@ func TestBackdateAndEdit(t *testing.T) {
 		t.Errorf("moving a log into the future: %d", rec.Code)
 	}
 	page := httptest.NewRecorder()
-	h.ServeHTTP(page, httptest.NewRequest("GET", "/", nil))
+	h.ServeHTTP(page, httptest.NewRequest("GET", "/habits", nil))
 	if !strings.Contains(page.Body.String(), `value="2026-11-18T21:15"`) {
 		t.Error("the index page has no time picker with the log's time")
 	}
@@ -230,7 +230,7 @@ func TestExportHabits(t *testing.T) {
 		t.Errorf("export: %d %v %q", rec.Code, rec.Header(), body)
 	}
 	page := httptest.NewRecorder()
-	h.ServeHTTP(page, httptest.NewRequest("GET", "/", nil))
+	h.ServeHTTP(page, httptest.NewRequest("GET", "/habits", nil))
 	if !strings.Contains(page.Body.String(), `href="/log/export.csv"`) {
 		t.Error("the index page has no download link")
 	}
@@ -245,7 +245,7 @@ func TestRecentHabitsThisWeek(t *testing.T) {
 	s.db.AddHabitLog(ctx, store.HabitLog{At: time.Date(2026, 11, 14, 23, 30, 0, 0, loc), Habit: "Alcohol", Count: 1, Source: "shortcut"})
 	s.db.AddHabitLog(ctx, store.HabitLog{At: time.Date(2026, 11, 15, 0, 30, 0, 0, loc), Habit: "Caffeine", Count: 1, Source: "shortcut"})
 	page := httptest.NewRecorder()
-	h.ServeHTTP(page, httptest.NewRequest("GET", "/", nil))
+	h.ServeHTTP(page, httptest.NewRequest("GET", "/habits", nil))
 	body := page.Body.String()
 	if !strings.Contains(body, `value="2026-11-15T00:30"`) {
 		t.Error("Sunday's log is missing")
@@ -258,7 +258,7 @@ func TestRecentHabitsThisWeek(t *testing.T) {
 	s.db.AddHabitLog(ctx, store.HabitLog{At: time.Date(2026, 11, 17, 9, 0, 0, 0, loc), Habit: "Caffeine", Count: 1, Source: "shortcut"})
 	s.db.AddHabitLog(ctx, store.HabitLog{At: time.Date(2026, 11, 17, 21, 0, 0, 0, loc), Habit: "Alcohol", Count: 1, Source: "shortcut"})
 	page = httptest.NewRecorder()
-	h.ServeHTTP(page, httptest.NewRequest("GET", "/", nil))
+	h.ServeHTTP(page, httptest.NewRequest("GET", "/habits", nil))
 	body = page.Body.String()
 	tue, sun := strings.Index(body, ">Tuesday, Nov 17</th>"), strings.Index(body, ">Sunday, Nov 15</th>")
 	if tue < 0 || sun < tue || strings.Count(body, ">Tuesday, Nov 17</th>") != 1 {

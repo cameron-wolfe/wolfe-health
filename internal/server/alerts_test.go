@@ -24,7 +24,7 @@ func TestAlertsSection(t *testing.T) {
 	s, h := trmnlServer(t, TRMNLConfig{}, 5, true)
 	get := func() string {
 		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+		h.ServeHTTP(rec, httptest.NewRequest("GET", "/alerts", nil))
 		return rec.Body.String()
 	}
 	if body := get(); !strings.Contains(body, "WH_HA_TOKEN") {

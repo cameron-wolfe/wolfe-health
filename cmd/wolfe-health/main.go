@@ -386,11 +386,82 @@ func daemonCmd(args []string) error {
 		return nil
 	}
 
+	// every setting in effect, for the panel's Settings page: set marks
+	// one given in .env or on the command line rather than defaulted
+	flagSet := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { flagSet[f.Name] = true })
+	backups := *backupDir
+	if backups == "" {
+		backups = filepath.Join(filepath.Dir(cfg.DBPath), "backups")
+	}
+	if *backupKeep == 0 {
+		backups = "off"
+	}
+	var settings []server.Setting
+	add := func(group, name, flagName, value string) {
+		settings = append(settings, server.Setting{Group: group, Name: name, Value: value,
+			Set: os.Getenv(name) != "" || flagSet[flagName]})
+	}
+	secret := func(name string) string {
+		if os.Getenv(name) == "" {
+			return "not set"
+		}
+		return "set (hidden)"
+	}
+	orNone := func(v string) string {
+		if v == "" {
+			return "—"
+		}
+		return v
+	}
+	add("Oura and storage", "OURA_CLIENT_ID", "", orNone(cfg.ClientID))
+	add("Oura and storage", "OURA_CLIENT_SECRET", "", secret("OURA_CLIENT_SECRET"))
+	add("Oura and storage", "WH_TOKEN_PATH", "", cfg.TokenPath)
+	add("Oura and storage", "WH_DB_PATH", "", cfg.DBPath)
+	add("Daemon", "WH_LISTEN", "listen", *listen)
+	add("Daemon", "WH_FETCH_EVERY", "every", every.String())
+	add("Daemon", "WH_FETCH_DAYS", "days", strconv.Itoa(*days))
+	add("Daemon", "WH_STARTUP_DAYS", "startup-days", strconv.Itoa(*startupDays))
+	add("Daemon", "WH_BACKUP_DIR", "backup-dir", backups)
+	add("Daemon", "WH_BACKUP_KEEP", "backup-keep", strconv.Itoa(*backupKeep))
+	add("Daemon", "WH_LOG_REQUESTS", "log-requests", map[bool]string{true: "every request", false: "quiet"}[*logAll])
+	add("Daemon", "WH_WEBHOOK_LISTEN", "webhook-listen", orNone(*webhookListen))
+	add("Daemon", "WH_WEBHOOK_URL", "webhook-url", orNone(*webhookURL))
+	add("Displays", "WH_TRMNL_BITS", "trmnl-bits", strconv.Itoa(*trmnlBits))
+	add("Displays", "WH_TRMNL_FORMAT", "trmnl-format", *trmnlFormat)
+	add("Displays", "WH_TRMNL_REFRESH", "trmnl-refresh", trmnlRefresh.String())
+	add("Displays", "WH_TEMP_ALERT_MIN", "", fmt.Sprintf("%.2f °C", dashboard.MinAlertDeviation))
+	add("Phone alerts", "WH_HA_URL", "", orNone(os.Getenv("WH_HA_URL")))
+	add("Phone alerts", "WH_HA_TOKEN", "", secret("WH_HA_TOKEN"))
+	add("Phone alerts", "WH_HA_NOTIFY", "", orNone(os.Getenv("WH_HA_NOTIFY")))
+	add("Phone alerts", "WH_ALERT_LINK", "", orNone(os.Getenv("WH_ALERT_LINK")))
+	if alertEngine == nil {
+		add("Phone alerts", "(alerts)", "", "off: WH_HA_URL, WH_HA_TOKEN and WH_HA_NOTIFY aren't all set")
+	} else {
+		as := alertEngine.Settings
+		quiet := "off"
+		if alertEngine.QuietFrom != alertEngine.QuietTo {
+			quiet = fmt.Sprintf("%d-%d", alertEngine.QuietFrom, alertEngine.QuietTo)
+		}
+		var off []string
+		for _, n := range alerts.RuleNames {
+			if as.Off[n] {
+				off = append(off, n)
+			}
+		}
+		add("Phone alerts", "WH_ALERT_QUIET", "", quiet)
+		add("Phone alerts", "WH_ALERT_MAX_PER_DAY", "", strconv.Itoa(alertEngine.MaxPerDay))
+		add("Phone alerts", "WH_ALERT_SUMMARY_AT", "", map[bool]string{true: "off", false: strconv.Itoa(as.SummaryHour)}[as.Off["summary"]])
+		add("Phone alerts", "WH_ALERTS_OFF", "", orNone(strings.Join(off, ", ")))
+		add("Phone alerts", "WH_ALERT_ILLNESS", "", fmt.Sprintf("%d/%d", as.IllnessSignals, as.IllnessNights))
+		add("Phone alerts", "WH_ALERT_STALE", "", fmt.Sprintf("%s/%s", as.FetchStale, as.SyncStale))
+	}
+
 	srv := &http.Server{
 		Addr: *listen,
 		Handler: server.New(db, status, server.Config{TRMNL: server.TRMNLConfig{
 			Bits: *trmnlBits, Format: *trmnlFormat, Refresh: *trmnlRefresh,
-		}, Alerts: alertEngine, LogAll: *logAll}),
+		}, Alerts: alertEngine, LogAll: *logAll, Settings: settings}),
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      60 * time.Second,
 	}

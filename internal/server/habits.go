@@ -255,7 +255,7 @@ func (s *server) editHabit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		http.Redirect(w, r, "/#habits", http.StatusSeeOther)
+		http.Redirect(w, r, "/habits", http.StatusSeeOther)
 		return
 	}
 	at, err := time.ParseInLocation("2006-01-02T15:04", r.PostForm.Get("at"), now.Location())
@@ -274,7 +274,7 @@ func (s *server) editHabit(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	http.Redirect(w, r, "/#habits", http.StatusSeeOther)
+	http.Redirect(w, r, "/habits", http.StatusSeeOther)
 }
 
 // habitTotal is how much of a habit has been logged on now's day.
@@ -340,7 +340,7 @@ func (s *server) deleteHabit(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	http.Redirect(w, r, "/#habits", http.StatusSeeOther)
+	http.Redirect(w, r, "/habits", http.StatusSeeOther)
 }
 
 // habitRow is one log, formatted for the index page.

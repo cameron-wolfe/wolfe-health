@@ -72,6 +72,19 @@ func (s *server) emulatorManifest(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// appManifest names the control panel a web app, so a phone, tablet or Mac
+// can add it to its Home Screen or Dock and open it like one, with no
+// browser bars.
+func (s *server) appManifest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/manifest+json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"name": "Wolfe Health", "short_name": "Wolfe Health",
+		"start_url": "/", "scope": "/", "display": "standalone",
+		"background_color": "#111111", "theme_color": "#111111",
+		"icons": []map[string]string{{"src": "/emulator/icon.png", "sizes": "180x180", "type": "image/png"}},
+	})
+}
+
 // emulatorNow is what the emulator's caption shows: the screen up now,
 // ?advance screens on when Next screen has been pressed, and when the
 // schedule next changes. slot names the schedule's own slot, so the page
