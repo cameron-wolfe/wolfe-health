@@ -23,6 +23,10 @@ func TestString(t *testing.T) {
 	if got := (Info{}).String(time.UTC); got != "an unstamped build (no git commit recorded)" {
 		t.Errorf("unstamped: %q", got)
 	}
+	r := Info{Release: "v1.0.0", Commit: "a6feadd", Built: c}
+	if got := r.String(time.UTC); got != "v1.0.0 (a6feadd, built Nov 25 4:57 AM)" || r.Short() != "v1.0.0" {
+		t.Errorf("release: %q, %q", got, r.Short())
+	}
 	if Get().Go == "" {
 		t.Error("Get: no Go version")
 	}

@@ -11,9 +11,12 @@ export CGO_ENABLED := 0
 # tree had uncommitted changes; this adds when it was built (internal/version).
 # Shown in the daemon's start log, on the index page, at /status, and by
 # `wolfe-health version`.
-STAMP := -X github.com/cameron-wolfe/wolfe-health/internal/version.BuildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+# The release comes from the newest v* tag (git describe): "v1.0.0" on the
+# tag's commit, "v1.0.0-3-gabc1234" after it; empty before the first tag.
+STAMP := -X github.com/cameron-wolfe/wolfe-health/internal/version.BuildTime=$(shell date -u +%Y-%m-%dT%H:%M:%SZ) \
+	-X github.com/cameron-wolfe/wolfe-health/internal/version.Release=$(shell git describe --tags --match 'v[0-9]*' --dirty 2>/dev/null)
 
-.PHONY: all build run auth daemon chart daily night schedule unschedule logs pi arm64 linux bundle deploy rollback emulator shortcut decode test vet fmt clean
+.PHONY: release all build run auth daemon chart daily night schedule unschedule logs pi arm64 linux bundle deploy rollback emulator shortcut decode test vet fmt clean
 
 all: build
 
@@ -173,3 +176,10 @@ fmt:
 
 clean:
 	rm -rf $(OUT)
+
+## release: tag what's on main as VERSION and push the tag, after checking
+## it's ready (clean, pushed, CHANGELOG.md section, vet and tests pass):
+##   make release VERSION=v1.0.1
+release:
+	@test -n "$(VERSION)" || { echo "usage: make release VERSION=vX.Y.Z"; exit 2; }
+	@./scripts/release.sh "$(VERSION)"

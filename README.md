@@ -44,6 +44,7 @@ clone to your own Oura data on charts in about ten minutes.
   - [Where a change goes](#where-a-change-goes)
 - [Inspecting the data](#inspecting-the-data)
 - [Development](#development)
+  - [Releases](#releases)
 - [Known gaps](#known-gaps)
 
 ## Roadmap
@@ -1216,11 +1217,13 @@ Updates: `make deploy` (build, copy, keep the previous binary, restart) and
 `make rollback`. **Run only one fetcher per token**: move the token, don't
 copy it, and `make unschedule` on the Mac.
 
-**Which build is running.** Every build is stamped with the git commit it
-was built from, whether the working tree had uncommitted changes, and when
-it was built (`internal/version`: Go records the first three, the Makefile
-adds the build time). It shows on the index page (`Running e44ea92,
-committed Nov 24 8:57 PM, built Nov 24 9:10 PM`), in the daemon's first log
+**Which build is running.** Every build is stamped with its release (from
+the newest `v*` tag: `v1.0.0`, or `v1.0.0-3-gabc1234` three commits
+after it), the git commit it was built from, whether the working tree had
+uncommitted changes, and when it was built (`internal/version`: Go records
+the commit, the Makefile adds the release and build time; see
+[Releases](#releases)). It shows on the index page (`Running v1.0.0
+(a6feadd, committed Nov 24 9:48 PM, built Nov 24 10:00 PM)`), in the daemon's first log
 line at start, under `version` at `/status`, and from
 `wolfe-health version`. "+ uncommitted changes" (or `e44ea92+`) means the
 build had work that isn't committed, so it can't be rebuilt from git alone.
@@ -1644,6 +1647,42 @@ make pi      # linux/arm64 cross-compile for the Pi
 The SQLite driver is `modernc.org/sqlite`, which is pure Go. Not
 `mattn/go-sqlite3`: that needs cgo, which would turn `make pi` into a
 cross-compiler setup problem. Worth preserving as dependencies get added.
+
+</details>
+
+### Releases
+
+<details>
+<summary>Show</summary>
+
+Releases are git tags, `vMAJOR.MINOR.PATCH`, with notes in
+[CHANGELOG.md](CHANGELOG.md): **major** when upgrading needs something from
+you (listed under **Breaking**), **minor** for new things that need
+nothing, **patch** for fixes.
+
+```
+ work on main, committed and pushed
+        │
+        ▼
+ CHANGELOG.md: a "## vX.Y.Z — date" section saying what's in it; commit, push
+        │
+        ▼
+ make release VERSION=vX.Y.Z ── refuses unless: the version is vX.Y.Z and newer
+        │                       than the last tag · the CHANGELOG has its section ·
+        │                       the tree is clean · main matches GitHub · vet and
+        │                       tests pass
+        ▼
+ an annotated tag, pushed ──► the release page on GitHub (the link it prints;
+        │                     paste the CHANGELOG section as the notes)
+        ▼
+ make deploy ──► the index page says "Running vX.Y.Z (…)"
+```
+
+`make release` is `scripts/release.sh`. A build between releases is
+stamped `v1.0.0-3-gabc1234` (three commits after v1.0.0), so a deploy always
+says how far it is from the last release. With tags, a version can be
+installed directly: `go install
+github.com/cameron-wolfe/wolfe-health/cmd/wolfe-health@v1.0.0`.
 
 </details>
 

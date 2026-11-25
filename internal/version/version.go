@@ -18,8 +18,15 @@ import (
 // time by the Makefile; empty for a plain go build.
 var BuildTime string
 
+// Release is the release this build is, from git describe at link time:
+// "v1.0.0" on a release's own commit, "v1.0.0-3-gabc1234" three commits
+// after it, with "-dirty" when built with changes to tracked files. Empty
+// before the first release tag, or for a plain go build.
+var Release string
+
 // Info is the build's stamp.
 type Info struct {
+	Release    string    `json:"release,omitempty"`    // "v1.0.0", or "v1.0.0-3-gabc1234"
 	Commit     string    `json:"commit,omitempty"`     // short hash: "e44ea92"
 	CommitTime time.Time `json:"commit_time,omitzero"` // when that commit was made
 	Dirty      bool      `json:"dirty,omitempty"`      // built with uncommitted changes
@@ -29,7 +36,7 @@ type Info struct {
 
 // Get reads the stamp of the running binary.
 func Get() Info {
-	var i Info
+	i := Info{Release: Release}
 	if t, err := time.Parse(time.RFC3339, BuildTime); err == nil {
 		i.Built = t
 	}
@@ -54,9 +61,16 @@ func Get() Info {
 	return i
 }
 
-// String words the stamp in loc, for the log and the index page:
-// "e44ea92 + uncommitted changes, committed Nov 24 8:57 PM, built Nov 24 9:10 PM".
+// String words the stamp in loc, for the log and the index page, led by
+// the release when there is one: "v1.0.0 (e44ea92, committed Nov 24 8:57 PM,
+// built Nov 24 9:10 PM)", or without one "e44ea92 + uncommitted changes,
+// committed Nov 24 8:57 PM, built Nov 24 9:10 PM".
 func (i Info) String(loc *time.Location) string {
+	if i.Release != "" {
+		rest := i
+		rest.Release = ""
+		return i.Release + " (" + rest.String(loc) + ")"
+	}
 	if i.Commit == "" {
 		s := "an unstamped build (no git commit recorded)"
 		if !i.Built.IsZero() {
@@ -77,8 +91,12 @@ func (i Info) String(loc *time.Location) string {
 	return s
 }
 
-// Short is the commit with a mark for uncommitted changes: "e44ea92+".
+// Short is the release, or else the commit with a mark for uncommitted
+// changes: "v1.0.0", "e44ea92+".
 func (i Info) Short() string {
+	if i.Release != "" {
+		return i.Release
+	}
 	if i.Commit == "" {
 		return "unstamped"
 	}
