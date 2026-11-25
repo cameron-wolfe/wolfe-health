@@ -1,0 +1,154 @@
+{
+  "name": "Log a habit",
+  "icon": {
+    "glyph": 62337,
+    "color": 946986751
+  },
+  "types": [
+    "WFWorkflowTypeShowInSearch"
+  ],
+  "import_questions": [
+    {
+      "action": "server",
+      "param": "WFTextActionText",
+      "text": "Your wolfe-health server's Tailscale IPv4 address and port (http://100.x.y.z:8090; on the server, tailscale ip -4 shows it)",
+      "default": "http://100."
+    },
+    {
+      "action": "token",
+      "param": "WFTextActionText",
+      "text": "The habit log's token, from the Habit log section of the server's index page",
+      "default": ""
+    }
+  ],
+  "actions": [
+    {
+      "action": "comment",
+      "params": {
+        "WFCommentActionText": "Say \"Hey Siri, log a habit\": pick from the server's menu (caffeine, alcohol, a meal…), then Now or Earlier (a date and time), and it posts the log with the habit log's token; Siri reads back what was logged. Logs show on the index page, Habits · Week and the early warning. Needs the server reachable (home network, or Tailscale on the phone); a wrong token is refused, nothing stored."
+      }
+    },
+    {
+      "action": "gettext",
+      "id": "server",
+      "params": {
+        "WFTextActionText": "http://100.x.y.z:8090"
+      }
+    },
+    {
+      "action": "gettext",
+      "id": "token",
+      "params": {
+        "WFTextActionText": "<YOUR_TOKEN>"
+      }
+    },
+    {
+      "action": "downloadurl",
+      "id": "menu",
+      "params": {
+        "ShowHeaders": false,
+        "WFURL": "{{server}}/log/habits"
+      }
+    },
+    {
+      "action": "detect.text",
+      "id": "menutext",
+      "params": {
+        "WFInput": "{{menu}}"
+      }
+    },
+    {
+      "action": "text.split",
+      "id": "habits",
+      "params": {
+        "text": "{{menutext}}"
+      }
+    },
+    {
+      "action": "choosefromlist",
+      "id": "habit",
+      "params": {
+        "WFChooseFromListActionPrompt": "What are you logging?",
+        "WFInput": "{{habits}}"
+      }
+    },
+    {
+      "id": "when",
+      "menu": {
+        "prompt": "When?",
+        "items": {
+          "Now": [
+            {
+              "action": "gettext",
+              "params": {
+                "WFTextActionText": ""
+              }
+            }
+          ],
+          "Earlier": [
+            {
+              "action": "ask",
+              "id": "picked",
+              "params": {
+                "WFAskActionPrompt": "Date and time:",
+                "WFInputType": "Date and Time"
+              }
+            },
+            {
+              "action": "detect.date",
+              "id": "dates",
+              "params": {
+                "WFInput": "{{picked}}"
+              }
+            },
+            {
+              "action": "format.date",
+              "id": "iso",
+              "params": {
+                "WFDate": {
+                  "$text": "{{dates}}"
+                },
+                "WFDateFormatStyle": "ISO 8601",
+                "WFISO8601IncludeTime": true
+              }
+            },
+            {
+              "action": "gettext",
+              "params": {
+                "WFTextActionText": {
+                  "$text": "{{iso}}"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "action": "downloadurl",
+      "id": "send",
+      "params": {
+        "ShowHeaders": true,
+        "WFHTTPMethod": "POST",
+        "WFURL": "{{server}}/log",
+        "WFHTTPHeaders": {
+          "$dict": {
+            "X-Log-Token": "{{token}}"
+          }
+        },
+        "WFJSONValues": {
+          "$dict": {
+            "habit": "{{habit}}",
+            "at": "{{when}}"
+          }
+        }
+      }
+    },
+    {
+      "action": "showresult",
+      "params": {
+        "Text": "{{send:Contents of URL}}"
+      }
+    }
+  ]
+}

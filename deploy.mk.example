@@ -1,0 +1,14 @@
+# Per-machine deploy settings for `make deploy` / `make rollback`.
+# Copy to deploy.mk (gitignored) and fill in for your server.
+
+# SSH destination: user@host, or a Host alias from ~/.ssh/config.
+DEPLOY_HOST = you@192.168.1.20
+
+# Where the daemon is installed on the server.
+DEPLOY_DIR = /opt/wolfe-health
+
+# The server's CPU: arm64 for a 64-bit ARM board or Pi (3/4/5, Zero 2 W);
+# arm with TARGET_ARM = 7 for a 32-bit Pi OS, 6 for a Pi Zero W / Pi 1;
+# amd64 for a regular PC.
+TARGET_ARCH = arm64
+TARGET_ARM =

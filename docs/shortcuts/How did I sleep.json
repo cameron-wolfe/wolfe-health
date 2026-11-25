@@ -1,0 +1,45 @@
+{
+  "name": "How did I sleep",
+  "types": [
+    "WFWorkflowTypeShowInSearch"
+  ],
+  "import_questions": [
+    {
+      "action": "summary",
+      "param": "WFURL",
+      "text": "Your wolfe-health server's Tailscale IPv4 address and port, then /summary.txt (http://100.x.y.z:8090/summary.txt)",
+      "default": "http://100.x.y.z:8090/summary.txt"
+    }
+  ],
+  "actions": [
+    {
+      "action": "comment",
+      "params": {
+        "WFCommentActionText": "Say \"Hey Siri, how did I sleep\": it fetches the morning's figures from the wolfe-health server (/summary.txt) and reads them aloud: sleep score and its change, time asleep, readiness, and what held either back. Needs the server reachable (home network, or Tailscale on the phone); if it isn't, this step fails and iOS says so. It also suits an automation: Alarm is stopped, or Sleep Focus turns off."
+      }
+    },
+    {
+      "action": "downloadurl",
+      "id": "summary",
+      "params": {
+        "ShowHeaders": false,
+        "WFURL": "http://100.x.y.z:8090/summary.txt"
+      }
+    },
+    {
+      "action": "detect.text",
+      "id": "text",
+      "params": {
+        "WFInput": "{{summary}}"
+      }
+    },
+    {
+      "action": "speaktext",
+      "params": {
+        "WFText": {
+          "$text": "{{text}}"
+        }
+      }
+    }
+  ]
+}

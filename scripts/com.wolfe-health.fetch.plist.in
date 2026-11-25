@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- launchd agent template; `make schedule` fills in @REPO@ and @LOG@ and installs it. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.wolfe-health.fetch</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>@REPO@/scripts/fetch.sh</string>
+	</array>
+	<!-- every 3 hours; launchd runs a missed interval on wake if the Mac slept -->
+	<key>StartInterval</key>
+	<integer>10800</integer>
+	<key>StandardOutPath</key>
+	<string>@LOG@</string>
+	<key>StandardErrorPath</key>
+	<string>@LOG@</string>
+</dict>
+</plist>

@@ -1,0 +1,3 @@
+# Signed Siri shortcuts are binary: no text diffs. Their readable source is
+# the .plist beside each one.
+*.shortcut binary

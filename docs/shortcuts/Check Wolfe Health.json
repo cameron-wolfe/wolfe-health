@@ -1,0 +1,53 @@
+{
+  "name": "Check Wolfe Health",
+  "types": [
+    "WFWorkflowTypeShowInSearch"
+  ],
+  "import_questions": [
+    {
+      "action": "health",
+      "param": "WFURL",
+      "text": "Your wolfe-health server's Tailscale IPv4 address and port, then /health.txt (http://100.x.y.z:8090/health.txt)",
+      "default": "http://100.x.y.z:8090/health.txt"
+    }
+  ],
+  "actions": [
+    {
+      "action": "comment",
+      "params": {
+        "WFCommentActionText": "Run on a timer (Automation > Time of Day > Run Immediately). The server answers ok, or what's wrong with its data. If it doesn't answer at all, this step fails and iOS reports the failure: that is the alarm for a server that's down."
+      }
+    },
+    {
+      "action": "downloadurl",
+      "id": "health",
+      "params": {
+        "ShowHeaders": false,
+        "WFURL": "http://100.x.y.z:8090/health.txt"
+      }
+    },
+    {
+      "action": "detect.text",
+      "id": "text",
+      "params": {
+        "WFInput": "{{health}}"
+      }
+    },
+    {
+      "if": {
+        "input": "{{text}}",
+        "condition": "is not",
+        "value": "ok"
+      },
+      "then": [
+        {
+          "action": "notification",
+          "params": {
+            "WFNotificationActionTitle": "Wolfe Health needs a look",
+            "WFNotificationActionBody": "{{text}}"
+          }
+        }
+      ]
+    }
+  ]
+}

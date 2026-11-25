@@ -1,0 +1,26 @@
+# systemd unit template for the wolfe-health daemon. Don't edit or copy this
+# by hand: install-service.sh fills in the @...@ settings (user, directory,
+# port, timezone, extra flags) and installs the result.
+[Unit]
+Description=wolfe-health: fetch Oura data and serve charts over HTTP
+# Start once the network is up and the clock is set. A board with no battery
+# clock (most ARM boards, a Raspberry Pi) boots with a stale time, and until it's
+# set from the network Oura's certificate fails to verify. time-sync.target
+# only waits for that while a wait service is enabled (chrony-wait, or
+# systemd-time-wait-sync); install-service.sh enables whichever applies. The
+# daemon also retries a failed fetch within minutes, for whatever slips by.
+Wants=network-online.target time-sync.target
+After=network-online.target time-sync.target
+
+[Service]
+User=@USER@
+WorkingDirectory=@DIR@
+EnvironmentFile=@DIR@/.env
+Environment=WH_LISTEN=:@PORT@
+@TZ_LINE@
+ExecStart=@DIR@/wolfe-health daemon @ARGS@
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
