@@ -499,6 +499,22 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
   .ok { color:var(--muted); }
   .err { font-weight:600; }
   .status { margin:0 0 4px; }
+  /* the fetch status: a dot and a line, with Details to open */
+  .statusline { display:flex; flex-wrap:wrap; align-items:center; gap:6px 10px; }
+  .statusline > span:not(.dot) { flex:1 1 auto; min-width:0; }
+  .dot { flex:none; width:10px; height:10px; border-radius:50%; background:var(--muted); }
+  .dot.ok { background:#2e9d58; }
+  .dot.busy { background:#d99a1e; animation:breathe 1.6s ease-in-out infinite; }
+  .dot.bad { background:var(--bad); }
+  details.more { flex:none; font-size:13px; }
+  details.more summary { cursor:pointer; color:var(--muted); list-style:none; }
+  details.more summary::-webkit-details-marker { display:none; }
+  details.more summary::after { content:" ▸"; }
+  details.more[open] { flex-basis:100%; }
+  details.more[open] summary::after { content:" ▾"; }
+  details.more dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 14px; margin:8px 0 0; }
+  details.more dt { color:var(--muted); }
+  details.more dd { margin:0; overflow-wrap:anywhere; }
   .panel { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:0 0 16px; }
   .actions { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0 0; }
   .actions a, .actions button { display:inline-block; padding:6px 12px; border:1px solid var(--line);
@@ -952,18 +968,31 @@ document.addEventListener("keydown", e => {
 </script>
 </body>
 </html>
-{{define "fetch"}}<p class="status">
-  Last fetch:
-  {{if .Status.Fetching}}<b>fetching now</b><span class="muted">{{if .Status.Backfill}}, back-filling after a start{{end}}, since {{clock .Status.LastAttempt}}{{if not .Status.LastSuccess.IsZero}} · last success {{ago .Now .Status.LastSuccess}}{{end}}</span>
-  {{else if .Status.LastAttempt.IsZero}}{{if .Status.LastSuccess.IsZero}}<span class="muted">not yet run</span>{{else}}{{ago .Now .Status.LastSuccess}} <span class="muted">— before this start</span>{{end}}
-  {{else if .Healthy}}{{ago .Now .Status.LastSuccess}} <span class="muted">— {{if .Status.Restored}}before this start{{else}}{{.Status.LastResult}}{{end}}</span>
-  {{else}}<span class="bad">failed {{ago .Now .Status.LastAttempt}}: {{.Status.LastError}}</span>
-    {{if not .Status.LastSuccess.IsZero}}<span class="muted">(last success {{ago .Now .Status.LastSuccess}})</span>{{end}}
+{{define "fetch"}}{{/* the fetch status as one line (a dot and a few words), the rest in Details */}}
+<div class="statusline">
+  {{if .Status.Fetching}}<span class="dot busy" aria-hidden="true"></span>
+    <span><b>Fetching now</b>{{if .Status.Backfill}} · back-filling after a start{{end}}{{if not .Status.LastSuccess.IsZero}} · <span class="muted">last success {{ago .Now .Status.LastSuccess}}</span>{{end}}</span>
+  {{else if .Status.LastAttempt.IsZero}}{{if .Status.LastSuccess.IsZero}}<span class="dot idle" aria-hidden="true"></span>
+    <span><b>Not fetched yet</b></span>
+    {{else}}<span class="dot ok" aria-hidden="true"></span>
+    <span><b>Up to date</b> · updated {{ago .Now .Status.LastSuccess}} <span class="muted">(before this start)</span></span>{{end}}
+  {{else if .Healthy}}<span class="dot ok" aria-hidden="true"></span>
+    <span><b>Up to date</b> · updated {{ago .Now .Status.LastSuccess}}</span>
+  {{else}}<span class="dot bad" aria-hidden="true"></span>
+    <span><b>Last fetch failed</b> {{ago .Now .Status.LastAttempt}}{{if not .Status.LastSuccess.IsZero}} · <span class="muted">last success {{ago .Now .Status.LastSuccess}}</span>{{end}}</span>
   {{end}}
-</p>
-{{if not .Status.NextFetch.IsZero}}<p class="status muted">Next fetch {{clock .Status.NextFetch}}</p>{{end}}
-<p class="status muted">Running {{.Version}}</p>
-{{if .Status.Webhooks}}<p class="status muted">Oura webhooks: {{.Status.Webhooks}}{{if not .Status.LastWebhook.IsZero}} · last notification {{ago .Now .Status.LastWebhook}} ({{.Status.LastWebhookEvent}}){{else}} · no notification yet{{end}}</p>{{end}}{{end}}
+  <details class="more">
+    <summary>Details</summary>
+    <dl>
+      {{if .Status.LastError}}<dt>Error</dt><dd class="bad">{{.Status.LastError}}</dd>
+      {{else if .Status.LastResult}}<dt>Last fetch</dt><dd>{{.Status.LastResult}}</dd>{{end}}
+      {{if not .Status.LastAttempt.IsZero}}<dt>Last tried</dt><dd>{{clock .Status.LastAttempt}}</dd>{{end}}
+      {{if not .Status.NextFetch.IsZero}}<dt>Next fetch</dt><dd>{{clock .Status.NextFetch}}</dd>{{end}}
+      {{if .Status.Webhooks}}<dt>Oura webhooks</dt><dd>{{.Status.Webhooks}}{{if not .Status.LastWebhook.IsZero}} · last notification {{ago .Now .Status.LastWebhook}} ({{.Status.LastWebhookEvent}}){{else}} · no notification yet{{end}}</dd>{{end}}
+      <dt>Running</dt><dd>{{.Version}}</dd>
+    </dl>
+  </details>
+</div>{{end}}
 {{define "card"}}<div class="card">
   <h3>{{.Title}}</h3>
   <p class="note muted">{{.Note}}</p>

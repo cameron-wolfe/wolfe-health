@@ -19,6 +19,10 @@ pushes, and publishes the GitHub release with this section as the notes.
   the top of the page on a touch screen: a Home Screen app on a phone has no
   browser to reload it. Coming back to a page loaded over 10 minutes ago
   reloads it by itself.
+- **A tidier status.** The fetch status at the top of Today and Settings is
+  one line, a colored dot (up to date, fetching, failed, not yet) and a few
+  words, with the result or error, next fetch, webhooks and running build
+  under Details.
 
 ## v1.2.0 — 2026-11-24
 

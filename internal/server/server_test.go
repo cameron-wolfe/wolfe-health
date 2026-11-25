@@ -169,8 +169,8 @@ func TestDownloadSetsFilename(t *testing.T) {
 func TestIndex(t *testing.T) {
 	h := testServer(t)
 	today := get(t, h, "/").Body.String()
-	for _, want := range []string{"not yet run", `<a href="/charts" title="Charts (⌘2)"><svg`, `Charts</a>`, `class="on" aria-current="page"><svg`,
-		`src="/daily.png"`, `src="/early-warning.png"`, "Running "} {
+	for _, want := range []string{"Not fetched yet", `<a href="/charts" title="Charts (⌘2)"><svg`, `Charts</a>`, `class="on" aria-current="page"><svg`,
+		`src="/daily.png"`, `src="/early-warning.png"`, "<dt>Running</dt>"} {
 		if !strings.Contains(today, want) {
 			t.Errorf("today missing %q", want)
 		}
@@ -206,7 +206,7 @@ func TestIndexShowsFetchError(t *testing.T) {
 	tr := &Tracker{}
 	tr.Update(func(s *Status) { s.LastAttempt = time.Now(); s.LastError = "no Oura token yet" })
 	body := get(t, New(db, tr, Config{}), "/").Body.String()
-	if !strings.Contains(body, "no Oura token yet") || !strings.Contains(body, `class="bad"`) {
+	if !strings.Contains(body, "no Oura token yet") || !strings.Contains(body, `class="dot bad"`) || !strings.Contains(body, "Last fetch failed") {
 		t.Error("index should flag the failed fetch")
 	}
 }
@@ -225,14 +225,14 @@ func TestIndexShowsFetchInProgress(t *testing.T) {
 	}
 	tr.Update(func(s *Status) { s.LastAttempt, s.Fetching, s.Backfill = time.Now(), true, true })
 	body = get(t, New(db, tr, Config{}), "/").Body.String()
-	if !strings.Contains(body, "fetching now") || !strings.Contains(body, "back-filling") || !strings.Contains(body, "last success 2h 0m ago") {
+	if !strings.Contains(body, "Fetching now") || !strings.Contains(body, "back-filling") || !strings.Contains(body, "last success 2h 0m ago") {
 		t.Errorf("fetch in progress not shown:\n%s", statusLine(body))
 	}
 }
 
 // statusLine is the index page's fetch status, for test messages.
 func statusLine(body string) string {
-	i := strings.Index(body, "Last fetch:")
+	i := strings.Index(body, `class="statusline"`)
 	if i < 0 {
 		return body
 	}
