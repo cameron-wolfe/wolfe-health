@@ -13,21 +13,10 @@ To release: add a section here, commit and push, then
 `make release VERSION=vX.Y.Z` (see the README's *Releases*): it tags,
 pushes, and publishes the GitHub release with this section as the notes.
 
-## Unreleased
+## v1.2.0 — 2026-11-25
 
-- **Refresh.** A refresh button in the masthead, and pull-to-refresh from
-  the top of the page on a touch screen: a Home Screen app on a phone has no
-  browser to reload it. Coming back to a page loaded over 10 minutes ago
-  reloads it by itself.
-- **A tidier status.** The fetch status at the top of Today and Settings is
-  one line, a colored dot (up to date, fetching, failed, not yet) and a few
-  words, with the result or error, next fetch, webhooks and running build
-  under Details.
-
-## v1.2.0 — 2026-11-24
-
-Small touches that make the panel feel like an app. Nothing to do on
-upgrade.
+Small touches that make the panel feel like an app, on a Mac or a phone.
+Nothing to do on upgrade.
 
 - **Chart placeholders.** A chart's box keeps the chart's shape and shows
   the wolf mark, pulsing, while it draws, then fades the chart in; one that
@@ -45,6 +34,14 @@ upgrade.
   runs on a one-second heartbeat, so a Safari Dock app or a phone's Home
   Screen app, whose timers can be held in the background, still notices; its
   status can be shown in the corner (Settings, or `?watch=1`).
+- **Refresh.** A refresh button in the masthead, and pull-to-refresh from
+  the top of the page on a touch screen: a Home Screen app on a phone has no
+  browser to reload it. Coming back to a page loaded over 10 minutes ago
+  reloads it by itself.
+- **A tidier status.** The fetch status at the top of Today and Settings is
+  one line, a colored dot (up to date, fetching, failed, not yet) and a few
+  words, with the result or error, next fetch, webhooks and running build
+  under Details.
 
 ## v1.1.0 — 2026-11-24
 
