@@ -515,8 +515,11 @@ log; **Alerts** phone alerts; **Settings** every setting in effect (set ones
 in bold, secrets hidden). On a phone, tablet or Mac, Add to Home Screen (or
 Add to Dock) opens it like an app, with no browser bars.
 
-Small things that make it feel like one: each tab has an icon and a
-shortcut (⌘1–⌘6, Ctrl on Windows); a chart's box shows the wolf mark,
+Small things that make it feel like one: a refresh button in the
+masthead, and pull-to-refresh from the top on a touch screen (a Home Screen
+app has no browser to reload it; coming back to a page over 10 minutes old
+reloads it by itself); each tab has an icon and a shortcut (⌘1–⌘6, Ctrl on
+Windows); a chart's box shows the wolf mark,
 pulsing, while the chart draws; a confirmation ("Schedule saved", "Log
 removed") shows briefly and fades, while a failure stays; removing a log or
 resetting the schedule asks first; a page the server doesn't have gets a

@@ -198,7 +198,7 @@ func (s *server) index(w http.ResponseWriter, r *http.Request, page string) {
 		d.Date = base.Format("2006-01-02")
 	}
 	d.Healthy = d.Status.LastError == ""
-	d.Mark, d.Favicon, d.Placeholder = markHTML, favicon, placeholder
+	d.Mark, d.Favicon, d.Placeholder, d.BigMark = markHTML, favicon, placeholder, bigMark
 
 	d.Today = []card{
 		{Title: "Daily brief", Note: "readiness as a gauge, last night as a moon, today's rings and yesterday's figures, as a console", Src: src("/daily.png", nil)},
@@ -429,6 +429,10 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
 	"ago":   ago,
 	"clock": func(t time.Time) string { return t.Format("Mon 3:04 PM") },
 	"pages": func() any { return pages },
+	"refreshIcon": func() template.HTML {
+		return template.HTML(`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ` +
+			`stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>`)
+	},
 }).Parse(`<!doctype html>
 <html lang="en">
 <head>
@@ -461,6 +465,23 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
   .masthead svg { display:block; flex:none; }
   .wordmark { font-weight:700; font-size:16px; letter-spacing:.24em; }
   .masthead .when { margin-left:auto; font-size:13px; letter-spacing:.08em; opacity:.8; }
+  /* refresh: a button in the masthead, and pulling down from the top on a
+     touch screen (a Home Screen app has no browser to do either) */
+  .refresh { background:none; border:0; color:#cfcfcf; padding:4px; margin:-4px -4px -4px 0; cursor:pointer;
+             border-radius:999px; line-height:0; }
+  .refresh:hover { color:#fff; background:#2a2a2a; }
+  .refresh.spin svg { animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  /* the pull indicator sits at the very top of the screen, under the status
+     bar: on an iPhone, pulling drags the whole page (header too) down,
+     opening a gap there, and the indicator shows in it; above the header, so
+     a screen without that bounce still shows it */
+  .ptr { position:fixed; left:50%; top:calc(env(safe-area-inset-top) + 6px); z-index:6;
+         transform:translate(-50%, -8px); opacity:0; text-align:center;
+         color:var(--muted); font-size:12px; pointer-events:none; transition:transform .2s, opacity .2s; }
+  .ptr svg { display:block; margin:0 auto 4px; width:36px; height:36px; }
+  .ptr.pulling { transition:none; }
+  .ptr.spinning svg { animation:spin .8s linear infinite; } /* released: keeps turning while it reloads */
   nav.tabs { display:flex; gap:4px; overflow-x:auto; padding:0 max(12px, env(safe-area-inset-left)) 8px;
              scrollbar-width:none; -webkit-overflow-scrolling:touch; }
   nav.tabs::-webkit-scrollbar { display:none; }
@@ -548,6 +569,7 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
   tr.active td { background:var(--line); }
   @media (max-width: 600px) {
     .masthead .when { display:none; }
+    .refresh { margin-left:auto; }
     h2 { margin-top:22px; }
   }
 </style>
@@ -558,6 +580,7 @@ var indexTmpl = template.Must(template.New("index").Funcs(template.FuncMap{
     {{.Mark}}
     <span class="wordmark">WOLFE HEALTH</span>
     <span class="when">{{clock .Now}}</span>
+    <button type="button" class="refresh" id="refresh" title="Refresh" aria-label="Refresh">{{refreshIcon}}</button>
   </div>
   <nav class="tabs">{{range pages}}<a href="{{.Path}}" title="{{.Label}} (⌘{{.Key}})"{{if eq .Name $.Page}} class="on" aria-current="page"{{end}}>{{.Icon}}{{.Label}}</a>{{end}}</nav>
 </header>
@@ -792,6 +815,7 @@ keeps its own settings, separate from the browser's), show its status in the cor
 {{end}}</table></div>{{else}}<p class="muted">Not known here: the settings are listed when the daemon serves this page.</p>{{end}}
 {{end}}
 </main>
+<div class="ptr" id="ptr" aria-hidden="true">{{.BigMark}}<span id="ptr-label">Pull to refresh</span></div>
 {{if .Toast}}<div class="toast" id="toast" role="status">{{.Toast}}</div>{{end}}
 <div class="watch-status" id="watch-status" hidden></div>
 <div class="offline" id="offline" role="alert" aria-live="assertive">
@@ -813,6 +837,50 @@ keeps its own settings, separate from the browser's), show its status in the cor
     if (v && !/failed|error/.test(v)) { u.searchParams.delete(k); changed = true; }
   }
   if (changed) history.replaceState(null, "", u.pathname + u.search + u.hash);
+})();
+
+// refreshing: the masthead button; pulling down from the top of the page on
+// a touch screen (the mark turns as you pull, and letting go past the
+// threshold reloads); and on coming back to a page loaded over 10 minutes
+// ago, a reload by itself, so an app left open shows today's numbers
+(function () {
+  const btn = document.getElementById("refresh");
+  const reload = () => { btn.classList.add("spin"); location.reload(); };
+  btn.addEventListener("click", reload);
+
+  const loaded = Date.now();
+  const stale = () => { if (Date.now() - loaded > 10 * 60 * 1000) reload(); };
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) stale(); });
+  addEventListener("pageshow", e => { if (e.persisted) stale(); });
+
+  const ptr = document.getElementById("ptr"), label = document.getElementById("ptr-label");
+  const need = 80; // pixels of pull to refresh
+  let y0 = null, pull = 0;
+  addEventListener("touchstart", e => {
+    y0 = (window.scrollY <= 0 && e.touches.length === 1) ? e.touches[0].clientY : null;
+    pull = 0;
+  }, { passive: true });
+  addEventListener("touchmove", e => {
+    if (y0 === null) return;
+    pull = Math.max(0, e.touches[0].clientY - y0);
+    if (pull === 0 || window.scrollY > 0) { ptr.style.transform = ""; ptr.style.opacity = ""; return; }
+    const d = Math.min(pull, need * 1.5);
+    ptr.classList.add("pulling");
+    // at the top of the screen, in the gap the pull opens; fading in over
+    // the first 30 pixels and easing down a little as the pull goes on
+    ptr.style.transform = "translate(-50%, " + (d * 0.25 - 8) + "px)";
+    ptr.style.opacity = Math.min(1, pull / 30);
+    // the mark turns with the finger, a degree a pixel, the whole way (only its slide stops),
+    // so it never looks stuck however far the pull goes
+    ptr.querySelector("svg").style.transform = "rotate(" + pull + "deg)";
+    label.textContent = pull >= need ? "Release to refresh" : "Pull to refresh";
+  }, { passive: true });
+  addEventListener("touchend", () => {
+    ptr.classList.remove("pulling");
+    if (y0 !== null && pull >= need) { label.textContent = "Refreshing…"; ptr.classList.add("spinning"); reload(); }
+    else { ptr.style.transform = ""; ptr.style.opacity = ""; }
+    y0 = null; pull = 0;
+  });
 })();
 
 // ⌘1–⌘6 (Ctrl on Windows) switch tabs

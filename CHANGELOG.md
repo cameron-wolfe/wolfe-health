@@ -13,6 +13,13 @@ To release: add a section here, commit and push, then
 `make release VERSION=vX.Y.Z` (see the README's *Releases*): it tags,
 pushes, and publishes the GitHub release with this section as the notes.
 
+## Unreleased
+
+- **Refresh.** A refresh button in the masthead, and pull-to-refresh from
+  the top of the page on a touch screen: a Home Screen app on a phone has no
+  browser to reload it. Coming back to a page loaded over 10 minutes ago
+  reloads it by itself.
+
 ## v1.2.0 — 2026-11-24
 
 Small touches that make the panel feel like an app. Nothing to do on

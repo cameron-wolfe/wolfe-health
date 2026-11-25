@@ -455,3 +455,14 @@ func TestPanelTouches(t *testing.T) {
 		}
 	}
 }
+
+// A Home Screen app has no browser to refresh it: every page has its own
+// refresh button and pull-to-refresh, and reloads on return when stale.
+func TestRefresh(t *testing.T) {
+	body := get(t, testServer(t), "/").Body.String()
+	for _, want := range []string{`id="refresh"`, `aria-label="Refresh"`, `id="ptr"`, "Pull to refresh", "10 * 60 * 1000"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("today missing %q", want)
+		}
+	}
+}
